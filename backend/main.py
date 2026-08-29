@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import fitz  # PyMuPDF
+import pymupdf as fitz
 from database import db
 from extractor import extract_entities_from_text
 import io
@@ -27,7 +27,7 @@ async def ingest_file(file: UploadFile = File(...)):
                 text += page.get_text()
         else:
             # Assume TXT/CSV or other raw text
-            text = content.decode('utf-8')
+            text = content.decode('utf-8', errors='ignore')
             
         if not text.strip():
             raise HTTPException(status_code=400, detail="Could not extract text from file")
@@ -39,7 +39,8 @@ async def ingest_file(file: UploadFile = File(...)):
         
         db.ingest_graph_data(nodes, edges)
         
-        return {"status": "success", "message": "Data ingested successfully", "data": graph_data}
+        full_graph = db.get_all_graph_data()
+        return full_graph
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
