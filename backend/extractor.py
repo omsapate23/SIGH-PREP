@@ -3,27 +3,65 @@ import json
 
 def extract_entities_from_text(text: str) -> dict:
     prompt = f"""
-You are a criminal intelligence parser. Extract all persons, phone numbers, vehicles, bank accounts, and locations.
-Output STRICT JSON:
+You are a deterministic data extractor and expert criminal intelligence parser.
+ONLY extract entities explicitly named in the text. DO NOT invent, infer, or hallucinate relationships. If a relationship is not directly stated, omit it.
+
+Extract all relevant entities (persons, phone numbers, vehicles, bank accounts, locations, organizations) and their relationships from the report.
+
+For each entity, extract:
+- id: unique slug or standardized identifier (e.g., 'rajesh_malhotra', 'phone_9876543210')
+- label: clean display name (e.g., 'Rajesh Malhotra', '+91 98765 43210')
+- type: one of 'Person', 'Phone', 'Vehicle', 'Account', 'Location', 'Organization'
+- risk: integer threat score between 0 and 100 based on severity, criminal record, or central role
+- aliases: any known aliases or nicknames
+- last_seen: any timestamp, date, or address mentioned in connection with this entity
+- details: brief summary of role or involvement
+- evidence: EXACT quote or sentence from the source text justifying this entity's extraction and network connection
+
+For each relationship/edge, extract:
+- source: source entity id
+- target: target entity id
+- label: relationship description in UPPERCASE (e.g., 'CALLED', 'OWNS', 'MET_WITH', 'TRANSFERRED_FUNDS', 'ASSOCIATE_OF')
+- details: brief context
+
+Output STRICT JSON matching this schema:
 {{
   "nodes": [
-    {{"id": "unique_id", "label": "Display Name", "type": "Person|Phone|Vehicle|Account|Location", "risk": 0}}
+    {{
+      "id": "unique_id",
+      "label": "Display Name",
+      "type": "Person",
+      "risk": 85,
+      "aliases": "Known Nickname",
+      "last_seen": "Sector 18, Noida on 2026-05-12",
+      "details": "Prime coordinator in hawala transactions",
+      "evidence": "Rajesh Malhotra was intercepted transferring 50 lakhs..."
+    }}
   ],
   "edges": [
-    {{"source": "id1", "target": "id2", "label": "RELATIONSHIP_NAME"}}
+    {{
+      "source": "unique_id_1",
+      "target": "unique_id_2",
+      "label": "TRANSFERRED_FUNDS",
+      "details": "Rs 50,000 sent via UPI"
+    }}
   ]
 }}
-Note: risk should be a number between 0 and 100.
 
-Text to analyze:
+Source Text:
 {text}
 """
     
     response = ollama.chat(
         model='llama3:8b-instruct-q4_K_M',
         format='json',
+        options={
+            "temperature": 0.0,
+            "seed": 42,
+            "top_p": 0.1
+        },
         messages=[
-            {'role': 'system', 'content': 'You are a precise data extraction system. You only output valid JSON matching the exact schema requested, with no other text, explanation, or markdown.'},
+            {'role': 'system', 'content': 'You are a deterministic data extractor. ONLY extract entities explicitly named in the text. DO NOT invent, infer, or hallucinate relationships. If a relationship is not directly stated, omit it. Output ONLY valid JSON matching the schema, with no additional markdown, explanations, or commentary.'},
             {'role': 'user', 'content': prompt}
         ]
     )
