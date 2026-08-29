@@ -19,82 +19,69 @@ class Neo4jConnection:
         if self.__driver is not None:
             self.__driver.close()
         
-    def ingest_graph(self, data):
-        """
-        Idempotently inserts nodes and edges using MERGE.
-        data schema: {"nodes": [...], "edges": [...]}
-        """
+    def ingest_graph_data(self, nodes: list, edges: list):
         with self.__driver.session() as session:
-            # Ingest Nodes
-            for node in data.get("nodes", []):
+            for node in nodes:
                 session.execute_write(self._merge_node, node)
-            
-            # Ingest Edges
-            for edge in data.get("edges", []):
+            for edge in edges:
                 session.execute_write(self._merge_edge, edge)
                 
     @staticmethod
     def _merge_node(tx, node):
-        node_id = node.get("id")
-        label = node.get("label", "")
-        node_type = node.get("type", "Unknown")
-        
-        query = f"""
-        MERGE (n:`{node_type}` {{id: $node_id}})
-        SET n.label = $label
+        query = """
+        MERGE (n:Entity {id: $id})
+        SET n.label = $label, n.type = $type, n.risk = $risk
         RETURN n
         """
-        tx.run(query, node_id=node_id, label=label)
+        tx.run(query, 
+               id=node.get("id"), 
+               label=node.get("label", ""), 
+               type=node.get("type", "Unknown"), 
+               risk=node.get("risk", 0))
         
     @staticmethod
     def _merge_edge(tx, edge):
-        source = edge.get("source")
-        target = edge.get("target")
-        label = edge.get("label", "RELATED_TO")
-        
-        query = f"""
-        MATCH (a {{id: $source}})
-        MATCH (b {{id: $target}})
-        MERGE (a)-[r:`{label}`]->(b)
+        query = """
+        MATCH (a:Entity {id: $source}), (b:Entity {id: $target})
+        MERGE (a)-[r:RELATION {label: $label}]->(b)
         RETURN r
         """
-        tx.run(query, source=source, target=target)
+        tx.run(query, 
+               source=edge.get("source"), 
+               target=edge.get("target"), 
+               label=edge.get("label", "RELATED_TO"))
         
-    def get_cytoscape_graph(self):
+    def get_all_graph_data(self):
         with self.__driver.session() as session:
             return session.execute_read(self._fetch_graph)
 
     @staticmethod
     def _fetch_graph(tx):
-        # Fetch all nodes
-        nodes_result = tx.run("MATCH (n) RETURN n")
+        nodes_result = tx.run("MATCH (n:Entity) RETURN n")
         nodes = []
         for record in nodes_result:
             node = record["n"]
-            # Extract labels, there's usually one main type
-            node_type = list(node.labels)[0] if node.labels else "Unknown"
             nodes.append({
                 "data": {
                     "id": node["id"],
                     "label": node.get("label", node["id"]),
-                    "type": node_type
+                    "type": node.get("type", "Unknown"),
+                    "risk": node.get("risk", 0)
                 }
             })
             
-        # Fetch all edges
-        edges_result = tx.run("MATCH (a)-[r]->(b) RETURN a.id AS source, b.id AS target, type(r) AS type")
+        edges_result = tx.run("MATCH (a:Entity)-[r:RELATION]->(b:Entity) RETURN a.id AS source, b.id AS target, r.label AS label")
         edges = []
         for record in edges_result:
             edges.append({
                 "data": {
-                    "id": f"{record['source']}-{record['target']}-{record['type']}",
+                    "id": f"{record['source']}-{record['target']}-{record['label']}",
                     "source": record["source"],
                     "target": record["target"],
-                    "label": record["type"]
+                    "label": record["label"]
                 }
             })
             
-        return nodes + edges
+        return {"nodes": nodes, "edges": edges}
 
-# Initialize the connection with local credentials
 db = Neo4jConnection("bolt://localhost:7687", "neo4j", "password")
