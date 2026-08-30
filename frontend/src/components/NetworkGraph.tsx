@@ -18,8 +18,8 @@ interface NetworkGraphProps {
   elements: any;
   activeFilters: string[];
   searchQuery: string;
-  onSelectNode: (nodeData: any) => void;
-  onSelectEdge?: (edgeData: any) => void;
+  onSelectNode: (data: any) => void;
+  onSelectEdge: (data: any) => void;
 }
 
 // Base64 Encoded SVG Icons (White stroke, transparent fill)
@@ -185,41 +185,22 @@ export default function NetworkGraph({
 
   // Dedicated function to bind event handlers reliably to the live cytoscape instance
   const bindCyEvents = useCallback((cy: cytoscape.Core) => {
-    cy.off('tap click select unselect');
+    cy.off('tap');
 
-    // 1. Delegated Node Selector (fires on tap, click, or select)
-    cy.on('tap click select', 'node', (evt) => {
-      const node = evt.target;
-      const data = node.data();
-      if (onSelectNodeRef.current) {
-        onSelectNodeRef.current({ ...data });
-      }
-      if (onSelectEdgeRef.current) {
-        onSelectEdgeRef.current(null);
-      }
+    cy.on('tap', 'node', (evt) => {
+      const nodeData = evt.target.data();
+      onSelectNodeRef.current(nodeData);
     });
 
-    // 2. Delegated Edge Selector
-    cy.on('tap click select', 'edge', (evt) => {
-      const edge = evt.target;
-      const data = edge.data();
-      if (onSelectNodeRef.current) {
-        onSelectNodeRef.current(null);
-      }
-      if (onSelectEdgeRef.current) {
-        onSelectEdgeRef.current({ ...data });
-      }
+    cy.on('tap', 'edge', (evt) => {
+      const edgeData = evt.target.data();
+      onSelectEdgeRef.current(edgeData);
     });
 
-    // 3. Background canvas tap
     cy.on('tap', (evt) => {
       if (evt.target === cy) {
-        if (onSelectNodeRef.current) {
-          onSelectNodeRef.current(null);
-        }
-        if (onSelectEdgeRef.current) {
-          onSelectEdgeRef.current(null);
-        }
+        onSelectNodeRef.current(null);
+        onSelectEdgeRef.current(null);
       }
     });
   }, []);

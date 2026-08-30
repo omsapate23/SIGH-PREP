@@ -71,6 +71,16 @@ export default function SnareDashboard() {
   const [selectedEdge, setSelectedEdge] = useState<any | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  const handleNodeSelect = (nodeData: any) => {
+    setSelectedEdge(null);
+    setSelectedNode(nodeData);
+  };
+
+  const handleEdgeSelect = (edgeData: any) => {
+    setSelectedNode(null);
+    setSelectedEdge(edgeData);
+  };
+
   // Multi-file batch modal state
   const [caseTitleModalOpen, setCaseTitleModalOpen] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -868,14 +878,8 @@ export default function SnareDashboard() {
               elements={graphData}
               activeFilters={activeFilters}
               searchQuery={searchQuery}
-              onSelectNode={(nodeData) => {
-                setSelectedNode(nodeData);
-                setSelectedEdge(null);
-              }}
-              onSelectEdge={(edgeData) => {
-                setSelectedEdge(edgeData);
-                setSelectedNode(null);
-              }}
+              onSelectNode={handleNodeSelect}
+              onSelectEdge={handleEdgeSelect}
             />
           </div>
 
