@@ -19,6 +19,7 @@ interface NetworkGraphProps {
   activeFilters: string[];
   searchQuery: string;
   onSelectNode: (nodeData: any) => void;
+  onSelectEdge?: (edgeData: any) => void;
 }
 
 // Base64 Encoded SVG Icons (White stroke, transparent fill)
@@ -35,6 +36,15 @@ const SVG_ICONS = {
     'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMjAgMTBjMCA0Ljk5My01LjUzOSAxMC4xOTMtNy4zOTkgMTEuNzk5YTEgMSAwIDAgMS0xLjIwMiAwQzkuNTM5IDIwLjE5MyA0IDE0Ljk5MyA0IDEwYTggOCAwIDAgMSAxNiAwIi8+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMCIgcj0iMyIvPjwvc3ZnPg==',
   Organization:
     'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB3aWR0aD0iMTYiIGhlaWdodD0iMjAiIHg9IjQiIHk9IjIiIHJ4PSIyIiByeT0iMiIvPjxwYXRoIGQ9Ik05IDIydi00aDZ2NCIvPjxwYXRoIGQ9Ik04IDZoLjAxIi8+PHBhdGggZD0iTTE2IDZoLjAxIi8+PHBhdGggZD0iTTggMTBoLjAxIi8+PHBhdGggZD0iTTE2IDEwaC4wMSIvPjxwYXRoIGQ9Ik04IDE0aC4wMSIvPjxwYXRoIGQ9Ik0xNiAxNGguMDEiLz48L3N2Zz4=',
+  Digital_Artifact:
+    'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB3aWR0aD0iMTYiIGhlaWdodD0iMjAiIHg9IjQiIHk9IjIiIHJ4PSIyIiByeT0iMiIvPjxwYXRoIGQ9Ik05IDIydi00aDZ2NCIvPjxwYXRoIGQ9Ik04IDZoLjAxIi8+PHBhdGggZD0iTTE2IDZoLjAxIi8+PHBhdGggZD0iTTEyIDZoLjAxIi8+PHBhdGggZD0iTTEyIDEwaC4wMSIvPjxwYXRoIGQ9Ik0xMiAxNGguMDEiLz48cGF0aCBkPSJNMTYgMTBoLjAxIi8+PHBhdGggZD0iTTggMTBoLjAxIi8+PC9zdmc+',
+  Crime_Event:
+    'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJtMjEuNzMgMTgtOC0xNGEyIDIgMCAwIDAtMy40OCAwbC04IDE0QTIgMiAwIDAgMCA0IDIxaDE2YTIgMiAwIDAgMCAxLjczLTNaIi8+PHBhdGggZD0iTTEyIDl2NCIvPjxwYXRoIGQ9Ik0xMiAxN2guMDEiLz48L3N2Zz4=',
+};
+
+const formatNomenclature = (str: string) => {
+  if (!str) return '';
+  return str.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 };
 
 export default function NetworkGraph({
@@ -42,6 +52,7 @@ export default function NetworkGraph({
   activeFilters,
   searchQuery,
   onSelectNode,
+  onSelectEdge,
 }: NetworkGraphProps) {
   const cyRef = useRef<cytoscape.Core | null>(null);
 
@@ -60,7 +71,16 @@ export default function NetworkGraph({
 
     rawList.forEach((el) => {
       if (el.data?.source && el.data?.target) {
-        edges.push(el);
+        const rawLabel = el.data?.label || 'CONNECTED';
+        const formattedLabel = formatNomenclature(rawLabel);
+        edges.push({
+          ...el,
+          data: {
+            ...el.data,
+            label: formattedLabel,
+            raw_label: rawLabel,
+          },
+        });
         const src = String(el.data.source);
         const tgt = String(el.data.target);
         degreeMap[src] = (degreeMap[src] || 0) + 1;
@@ -118,20 +138,71 @@ export default function NetworkGraph({
           'text-valign': 'bottom',
           'text-margin-y': 5,
           'text-halign': 'center',
-          width: 'mapData(weight, 1, 15, 30, 80)',
-          height: 'mapData(weight, 1, 15, 30, 80)',
+          width: 'mapData(weight, 1, 15, 32, 84)',
+          height: 'mapData(weight, 1, 15, 32, 84)',
           // Monochromatic Purple shades according to threat/risk severity (0 to 100)
           'background-color': 'mapData(risk, 0, 100, #d8b4fe, #3b0764)',
-          'border-width': 0,
+          'border-width': 1.5,
+          'border-color': '#475569',
           'text-outline-color': '#000000',
           'text-outline-width': 2,
           'background-image-opacity': 0.95,
-          'background-width': '55%',
-          'background-height': '55%',
+          'background-width': '52%',
+          'background-height': '52%',
           'background-fit': 'none',
           'background-clip': 'node',
           'transition-property': 'opacity, border-width, border-color, background-color, width, height',
           'transition-duration': 250,
+        },
+      },
+      // Node Role Border Colors (Immediate visual distinction)
+      {
+        selector: 'node[role = "Suspect"]',
+        style: {
+          'border-color': '#ef4444',
+          'border-width': 2.5,
+        },
+      },
+      {
+        selector: 'node[role = "Victim"]',
+        style: {
+          'border-color': '#3b82f6',
+          'border-width': 2.5,
+        },
+      },
+      {
+        selector: 'node[role = "Officer"]',
+        style: {
+          'border-color': '#10b981',
+          'border-width': 2.5,
+        },
+      },
+      {
+        selector: 'node[role = "Witness"]',
+        style: {
+          'border-color': '#f59e0b',
+          'border-width': 2.5,
+        },
+      },
+      {
+        selector: 'node[role = "Mule_Account"]',
+        style: {
+          'border-color': '#ec4899',
+          'border-width': 2.5,
+        },
+      },
+      {
+        selector: 'node[role = "Tool"], node[role = "Digital_Artifact"]',
+        style: {
+          'border-color': '#8b5cf6',
+          'border-width': 2.5,
+        },
+      },
+      {
+        selector: 'node[role = "Infrastructure"]',
+        style: {
+          'border-color': '#64748b',
+          'border-width': 2,
         },
       },
       // Base64 SVGs for Entity Types
@@ -171,12 +242,24 @@ export default function NetworkGraph({
           'background-image': SVG_ICONS.Organization,
         },
       },
+      {
+        selector: 'node[type = "Digital_Artifact"], node[type = "Tool"]',
+        style: {
+          'background-image': SVG_ICONS.Digital_Artifact,
+        },
+      },
+      {
+        selector: 'node[type = "Crime_Event"]',
+        style: {
+          'background-image': SVG_ICONS.Crime_Event,
+        },
+      },
       // States: Focused / Unfocused / Highlighted
       {
         selector: 'node.focused',
         style: {
           opacity: 1,
-          'border-width': 2.5,
+          'border-width': 3,
           'border-color': '#ffffff',
           'z-index': 999,
         },
@@ -191,7 +274,7 @@ export default function NetworkGraph({
         selector: 'node.highlighted',
         style: {
           'border-color': '#ffffff',
-          'border-width': 3,
+          'border-width': 3.5,
           'background-color': '#ffffff',
           color: '#000000',
           'text-outline-color': '#ffffff',
@@ -199,34 +282,46 @@ export default function NetworkGraph({
           'z-index': 1000,
         },
       },
-      // Animated Flowing Edges
+      // Crisp Actionable Edges
       {
         selector: 'edge',
         style: {
           width: 2,
           'line-color': '#475569',
-          'target-arrow-shape': 'none',
+          'target-arrow-shape': 'triangle',
+          'target-arrow-color': '#475569',
+          'arrow-scale': 0.7,
           'curve-style': 'bezier',
           'line-style': 'dashed',
-          'line-dash-pattern': [4, 12],
+          'line-dash-pattern': [4, 10],
           'line-dash-offset': 0,
           label: 'data(label)',
-          'font-family': 'Inter, system-ui, sans-serif',
-          'font-size': '8px',
+          'font-family': 'Inter, system-ui, -apple-system, sans-serif',
+          'font-size': '9px',
+          'font-weight': 600,
           color: '#94a3b8',
           'text-rotation': 'autorotate',
-          'text-background-color': '#000000',
+          'text-background-color': '#0b0f19',
           'text-background-opacity': 0.85,
-          'text-background-padding': '2px',
-          'transition-property': 'opacity, line-color',
+          'text-background-padding': '3px',
+          'text-background-shape': 'roundrectangle',
+          'text-border-opacity': 0.6,
+          'text-border-color': '#1e293b',
+          'text-border-width': 1,
+          'transition-property': 'opacity, line-color, width',
           'transition-duration': 250,
         },
       },
       {
-        selector: 'edge.highlighted-edge',
+        selector: 'edge.highlighted-edge, edge:selected',
         style: {
           'line-color': '#c084fc',
-          width: 3,
+          'target-arrow-color': '#c084fc',
+          width: 3.5,
+          color: '#ffffff',
+          'text-background-color': '#1e293b',
+          'text-border-color': '#c084fc',
+          'z-index': 999,
         },
       },
       {
@@ -246,7 +341,7 @@ export default function NetworkGraph({
 
     const animateEdges = () => {
       offset -= 0.6;
-      if (offset <= -16) offset = 0;
+      if (offset <= -14) offset = 0;
       if (cyRef.current) {
         cyRef.current.edges().style('line-dash-offset', offset);
       }
@@ -269,7 +364,7 @@ export default function NetworkGraph({
       if (!activeFilters || activeFilters.length === 0) {
         cy.nodes().removeClass('focused unfocused');
         cy.edges().removeClass('unfocused');
-        cy.edges().style({ opacity: 0.8 });
+        cy.edges().style({ opacity: 0.85 });
         return;
       }
 
@@ -289,7 +384,7 @@ export default function NetworkGraph({
         const targetType = edge.target().data('type');
         if (activeFilters.includes(sourceType) || activeFilters.includes(targetType)) {
           edge.removeClass('unfocused');
-          edge.style({ opacity: 0.9 });
+          edge.style({ opacity: 0.95 });
         } else {
           edge.addClass('unfocused');
           edge.style({ opacity: 0.1 });
@@ -314,11 +409,13 @@ export default function NetworkGraph({
         const label = String(node.data('label') || '').toLowerCase();
         const id = String(node.data('id') || '').toLowerCase();
         const type = String(node.data('type') || '').toLowerCase();
+        const role = String(node.data('role') || '').toLowerCase();
         const aliases = String(node.data('aliases') || '').toLowerCase();
         return (
           label.includes(trimmed) ||
           id.includes(trimmed) ||
           type.includes(trimmed) ||
+          role.includes(trimmed) ||
           aliases.includes(trimmed)
         );
       });
@@ -401,10 +498,16 @@ export default function NetworkGraph({
           cyRef.current = cy;
           cy.on('tap', 'node', (evt) => {
             onSelectNode(evt.target.data());
+            if (onSelectEdge) onSelectEdge(null);
+          });
+          cy.on('tap', 'edge', (evt) => {
+            onSelectNode(null);
+            if (onSelectEdge) onSelectEdge(evt.target.data());
           });
           cy.on('tap', (evt) => {
             if (evt.target === cy) {
               onSelectNode(null);
+              if (onSelectEdge) onSelectEdge(null);
             }
           });
         }}

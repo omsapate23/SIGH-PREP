@@ -7,3 +7,4 @@ neo4j
 pydantic
 pandas
 faster-whisper
+sqlalchemy
