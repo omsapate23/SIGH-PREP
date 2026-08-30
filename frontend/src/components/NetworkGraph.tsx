@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react'
 import CytoscapeComponent from 'react-cytoscapejs';
 import cytoscape from 'cytoscape';
 import cola from 'cytoscape-cola';
-import { Maximize2, RefreshCw, LayoutGrid, Network, GitGraph } from 'lucide-react';
+import { Maximize2, RefreshCw, Network, GitGraph } from 'lucide-react';
 
 if (typeof window !== 'undefined') {
   try {
@@ -56,6 +56,15 @@ export default function NetworkGraph({
 }: NetworkGraphProps) {
   const cyRef = useRef<cytoscape.Core | null>(null);
   const [currentLayout, setCurrentLayout] = useState<'cola' | 'cose' | 'concentric'>('cola');
+
+  // Maintain stable callback references to avoid re-binding and stale closures
+  const onSelectNodeRef = useRef(onSelectNode);
+  const onSelectEdgeRef = useRef(onSelectEdge);
+
+  useEffect(() => {
+    onSelectNodeRef.current = onSelectNode;
+    onSelectEdgeRef.current = onSelectEdge;
+  }, [onSelectNode, onSelectEdge]);
 
   // Compute flat elements and calculate degree weight & sanitized risk for each node
   const flatElements = useMemo(() => {
@@ -112,6 +121,13 @@ export default function NetworkGraph({
     return [...weightedNodes, ...edges];
   }, [elements]);
 
+  const elementFingerprint = useMemo(() => {
+    if (!elements) return '';
+    const nodes = elements.nodes || [];
+    const edges = elements.edges || [];
+    return `${nodes.length}_${edges.length}_${nodes.map((n: any) => n.data?.id || '').sort().join(',')}`;
+  }, [elements]);
+
   const executeLayout = useCallback((layoutType: 'cola' | 'cose' | 'concentric' = 'cola') => {
     const cy = cyRef.current;
     if (!cy || cy.nodes().length === 0) return;
@@ -129,7 +145,7 @@ export default function NetworkGraph({
         name: 'cola',
         randomize: true,
         maxSimulationTime: 3000,
-        nodeSpacing: (node: any) => 60,
+        nodeSpacing: (node: any) => 65,
         edgeLength: (edge: any) => 140,
         avoidOverlap: true,
         handleDisconnected: true,
@@ -140,8 +156,8 @@ export default function NetworkGraph({
         ...layoutConfig,
         name: 'cose',
         randomize: true,
-        componentSpacing: 120,
-        nodeRepulsion: (node: any) => 800000,
+        componentSpacing: 130,
+        nodeRepulsion: (node: any) => 900000,
         idealEdgeLength: (edge: any) => 150,
         edgeElasticity: (edge: any) => 100,
         nestingFactor: 5,
@@ -167,15 +183,58 @@ export default function NetworkGraph({
     }
   }, []);
 
-  // Re-run layout whenever flatElements changes to prevent collapsed nodes
+  // Dedicated function to bind event handlers reliably to the live cytoscape instance
+  const bindCyEvents = useCallback((cy: cytoscape.Core) => {
+    cy.off('tap click select unselect');
+
+    // 1. Delegated Node Selector (fires on tap, click, or select)
+    cy.on('tap click select', 'node', (evt) => {
+      const node = evt.target;
+      const data = node.data();
+      if (onSelectNodeRef.current) {
+        onSelectNodeRef.current({ ...data });
+      }
+      if (onSelectEdgeRef.current) {
+        onSelectEdgeRef.current(null);
+      }
+    });
+
+    // 2. Delegated Edge Selector
+    cy.on('tap click select', 'edge', (evt) => {
+      const edge = evt.target;
+      const data = edge.data();
+      if (onSelectNodeRef.current) {
+        onSelectNodeRef.current(null);
+      }
+      if (onSelectEdgeRef.current) {
+        onSelectEdgeRef.current({ ...data });
+      }
+    });
+
+    // 3. Background canvas tap
+    cy.on('tap', (evt) => {
+      if (evt.target === cy) {
+        if (onSelectNodeRef.current) {
+          onSelectNodeRef.current(null);
+        }
+        if (onSelectEdgeRef.current) {
+          onSelectEdgeRef.current(null);
+        }
+      }
+    });
+  }, []);
+
+  // Run layout ONLY when dataset actually changes (not on node selection state updates)
   useEffect(() => {
-    if (cyRef.current && flatElements.length > 0) {
+    const cy = cyRef.current;
+    if (cy && flatElements.length > 0) {
+      bindCyEvents(cy);
       const timer = setTimeout(() => {
         executeLayout(currentLayout);
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [flatElements, executeLayout, currentLayout]);
+  }, [elementFingerprint, executeLayout, currentLayout, bindCyEvents, flatElements.length]);
 
   const styleSheet: any[] = useMemo(
     () => [
@@ -200,7 +259,6 @@ export default function NetworkGraph({
           'text-border-opacity': 0.8,
           width: 'mapData(weight, 1, 15, 36, 88)',
           height: 'mapData(weight, 1, 15, 36, 88)',
-          // Monochromatic Purple shades according to threat/risk severity (0 to 100)
           'background-color': 'mapData(risk, 0, 100, #d8b4fe, #3b0764)',
           'border-width': 2,
           'border-color': '#475569',
@@ -213,7 +271,7 @@ export default function NetworkGraph({
           'transition-duration': 250,
         },
       },
-      // Node Role Border Colors (Immediate visual distinction)
+      // Node Role Border Colors
       {
         selector: 'node[role = "Suspect"]',
         style: {
@@ -575,20 +633,7 @@ export default function NetworkGraph({
         stylesheet={styleSheet}
         cy={(cy) => {
           cyRef.current = cy;
-          cy.on('tap', 'node', (evt) => {
-            onSelectNode(evt.target.data());
-            if (onSelectEdge) onSelectEdge(null);
-          });
-          cy.on('tap', 'edge', (evt) => {
-            onSelectNode(null);
-            if (onSelectEdge) onSelectEdge(evt.target.data());
-          });
-          cy.on('tap', (evt) => {
-            if (evt.target === cy) {
-              onSelectNode(null);
-              if (onSelectEdge) onSelectEdge(null);
-            }
-          });
+          bindCyEvents(cy);
         }}
       />
     </div>

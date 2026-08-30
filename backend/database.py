@@ -1,144 +1,148 @@
+import os
 from neo4j import GraphDatabase
-import logging
-from models import SessionLocal, CaseRecord
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from models import Base, CaseRecord
 import uuid
+from typing import Optional, List
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# SQLite Setup
+SQLITE_DB_URL = "sqlite:///./snare_cases.db"
+engine = create_engine(SQLITE_DB_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base.metadata.create_all(bind=engine)
 
-# --- SQLite Case Helper Functions ---
-
-def create_case(title: str, raw_text: str = "", case_id: str = None, status: str = "Active") -> dict:
-    db_session = SessionLocal()
+def create_case(title: str, raw_text: str = "") -> dict:
+    session = SessionLocal()
     try:
-        new_case = CaseRecord(
-            id=case_id or str(uuid.uuid4()),
+        case = CaseRecord(
+            id=str(uuid.uuid4()),
             title=title,
-            status=status,
+            status="Active",
             raw_text=raw_text
         )
-        db_session.add(new_case)
-        db_session.commit()
-        db_session.refresh(new_case)
-        return new_case.to_dict()
+        session.add(case)
+        session.commit()
+        session.refresh(case)
+        return case.to_dict()
     finally:
-        db_session.close()
+        session.close()
 
-def get_all_cases() -> list:
-    db_session = SessionLocal()
+def get_all_cases() -> List[dict]:
+    session = SessionLocal()
     try:
-        cases = db_session.query(CaseRecord).order_by(CaseRecord.created_at.desc()).all()
+        cases = session.query(CaseRecord).order_by(CaseRecord.created_at.desc()).all()
         return [c.to_dict() for c in cases]
     finally:
-        db_session.close()
+        session.close()
 
-def get_case_by_id(case_id: str) -> dict | None:
-    db_session = SessionLocal()
+def get_case_by_id(case_id: str) -> Optional[dict]:
+    session = SessionLocal()
     try:
-        case = db_session.query(CaseRecord).filter(CaseRecord.id == case_id).first()
+        case = session.query(CaseRecord).filter(CaseRecord.id == case_id).first()
         return case.to_dict() if case else None
     finally:
-        db_session.close()
+        session.close()
 
 def delete_case_by_id(case_id: str) -> bool:
-    db_session = SessionLocal()
+    session = SessionLocal()
     try:
-        case = db_session.query(CaseRecord).filter(CaseRecord.id == case_id).first()
+        case = session.query(CaseRecord).filter(CaseRecord.id == case_id).first()
         if case:
-            db_session.delete(case)
-            db_session.commit()
+            session.delete(case)
+            session.commit()
             return True
         return False
     finally:
-        db_session.close()
+        session.close()
 
-def append_case_raw_text(case_id: str, new_text: str) -> dict | None:
-    db_session = SessionLocal()
+def append_case_raw_text(case_id: str, additional_text: str) -> Optional[dict]:
+    session = SessionLocal()
     try:
-        case = db_session.query(CaseRecord).filter(CaseRecord.id == case_id).first()
+        case = session.query(CaseRecord).filter(CaseRecord.id == case_id).first()
         if case:
-            if case.raw_text:
-                case.raw_text += f"\n\n--- ADDITIONAL EVIDENCE PAYLOAD ---\n{new_text}"
-            else:
-                case.raw_text = new_text
-            db_session.commit()
-            db_session.refresh(case)
+            separator = "\n\n--- ADDITIONAL EVIDENCE PAYLOAD ---\n\n" if case.raw_text else ""
+            case.raw_text = (case.raw_text or "") + separator + additional_text
+            session.commit()
+            session.refresh(case)
             return case.to_dict()
         return None
     finally:
-        db_session.close()
+        session.close()
 
 def clear_sqlite_cases():
-    db_session = SessionLocal()
+    session = SessionLocal()
     try:
-        db_session.query(CaseRecord).delete()
-        db_session.commit()
+        session.query(CaseRecord).delete()
+        session.commit()
     finally:
-        db_session.close()
+        session.close()
 
 
-# --- Threat Scoring Metric ---
-
-def calculate_threat_score(node_type: str, degree_count: int) -> int:
-    type_multipliers = {
+def calculate_threat_score(node_type: str, degree: int) -> int:
+    """
+    Deterministic Graph-Theoretic Threat Assessment Formula:
+    T_s = (10 + (degree * 8)) * TYPE_MULTIPLIER
+    Capped strictly at 100.
+    """
+    multipliers = {
         "Person": 1.5,
-        "Account": 1.3,
-        "Phone": 1.1,
+        "Account": 1.4,
+        "Phone": 1.2,
+        "Digital_Artifact": 1.1,
+        "Organization": 1.0,
         "Vehicle": 0.8,
-        "Location": 0.5,
-        "Organization": 1.2,
-        "Digital_Artifact": 1.0,
-        "Crime_Event": 1.4,
-        "Tool": 1.0,
-        "Infrastructure": 0.9
+        "Location": 0.6,
+        "Crime_Event": 0.5,
+        "Case": 1.0
     }
     
-    base_score = 10
-    edge_weight = degree_count * 8  # 8 points per direct connection
+    multiplier = multipliers.get(node_type, 1.0)
+    base_score = 10 + (degree * 8)
+    threat_score = int(round(base_score * multiplier))
     
-    multiplier = type_multipliers.get(node_type, 1.0)
-    raw_score = (base_score + edge_weight) * multiplier
-    
-    return min(int(raw_score), 100)
+    return min(100, max(0, threat_score))
 
-
-# --- Neo4j Graph Connection & Operations ---
 
 class Neo4jConnection:
-    def __init__(self, uri, user, pwd):
-        self.__uri = uri
-        self.__user = user
-        self.__pwd = pwd
-        self.__driver = None
-        try:
-            self.__driver = GraphDatabase.driver(self.__uri, auth=(self.__user, self.__pwd))
-        except Exception as e:
-            logger.error(f"Failed to create the driver: {e}")
-        
+    def __init__(self, uri, user, password):
+        self.__driver = GraphDatabase.driver(uri, auth=(user, password))
+
     def close(self):
         if self.__driver is not None:
             self.__driver.close()
-        
+
     def clear_graph_database(self):
         with self.__driver.session() as session:
-            session.execute_write(lambda tx: tx.run("MATCH (n) DETACH DELETE n"))
+            session.run("MATCH (n) DETACH DELETE n")
 
     def delete_case_from_graph(self, case_id: str):
+        """
+        Deletes the Case node from Neo4j and garbage-collects any entities
+        that are no longer cited in any other case.
+        """
+        query = """
+        MATCH (c:Case {id: $case_id})
+        OPTIONAL MATCH (n:Entity)-[r:CITED_IN]->(c)
+        DETACH DELETE c
+        WITH n
+        WHERE n IS NOT NULL AND NOT (n)-[:CITED_IN]->(:Case)
+        DETACH DELETE n
+        """
         with self.__driver.session() as session:
-            def _delete_tx(tx):
-                tx.run("MATCH (c:Case {id: $case_id}) DETACH DELETE c", case_id=case_id)
-                tx.run("MATCH (n:Entity) WHERE NOT (n)-[:CITED_IN]->(:Case) DETACH DELETE n")
-            session.execute_write(_delete_tx)
+            session.run(query, case_id=case_id)
 
     def ingest_graph_data(self, nodes: list, edges: list, case_id: str = None):
         with self.__driver.session() as session:
+            if case_id:
+                session.run("MERGE (c:Case {id: $case_id})", case_id=case_id)
             for node in nodes:
                 session.execute_write(self._merge_node, node, case_id)
             for edge in edges:
                 session.execute_write(self._merge_edge, edge)
-                
+
     @staticmethod
-    def _merge_node(tx, node, case_id: str = None):
+    def _merge_node(tx, node, case_id=None):
         query = """
         MERGE (n:Entity {id: $id})
         SET n.label = $label,
@@ -267,7 +271,7 @@ class Neo4jConnection:
                     "evidence": record.get("evidence", "")
                 }
             })
-            
+
         return {"nodes": nodes, "edges": edges}
 
 db = Neo4jConnection("bolt://localhost:7687", "neo4j", "password")

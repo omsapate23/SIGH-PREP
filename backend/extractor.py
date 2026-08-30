@@ -19,11 +19,47 @@ def normalize_entity(node: dict) -> dict:
     raw_label = str(node.get("label", raw_id)).strip()
     raw_type = str(node.get("type", "Unknown")).strip()
     role = str(node.get("role", "Suspect" if raw_type == "Person" else "Infrastructure")).strip()
+    combined_str = f"{raw_label} {raw_id}".lower()
 
-    # 1. PHONE NUMBER NORMALIZATION
-    # Detect if type is Phone or if ID / label has phone number pattern
+    # 1. BANK ACCOUNT / FINANCIAL ARTIFACT NORMALIZATION (MUST CHECK BEFORE PHONE!)
+    is_account = (
+        raw_type.lower() in ["account", "bank_account", "mule_account", "financial", "bank"] or
+        bool(re.search(r'(account|ac_no|a/c|bank_acc|icici|sbi|hdfc|axis|pnb|paytm_bank|kotak)', combined_str))
+    )
+    if is_account:
+        clean_acc = re.sub(r'[^a-zA-Z0-9]', '', raw_id.lower().replace('account', '').replace('acc', '').replace('bank', '').replace('icici', '').replace('sbi', '').replace('hdfc', ''))
+        if not clean_acc:
+            clean_acc = re.sub(r'[^a-zA-Z0-9]', '', raw_label.lower())
+        
+        canonical_id = f"account_{clean_acc}" if clean_acc else f"account_{raw_id.lower()}"
+        node["id"] = canonical_id
+        node["label"] = raw_label if raw_label else f"Account {clean_acc}"
+        node["type"] = "Account"
+        if role not in ["Mule_Account", "Suspect", "Victim"]:
+            node["role"] = "Mule_Account"
+        return node
+
+    # 2. VEHICLE & LICENSE PLATE NORMALIZATION
+    plate_match = re.search(r'([A-Za-z]{2}[-\s]?\d{1,2}[-\s]?[A-Za-z]{1,3}[-\s]?\d{4})', f"{raw_label} {raw_id}")
+    if raw_type.lower() in ["vehicle", "car", "bike", "truck"] or plate_match:
+        if plate_match:
+            clean_plate = re.sub(r'[^A-Za-z0-9]', '', plate_match.group(1)).upper()
+            canonical_id = f"vehicle_{clean_plate.lower()}"
+            node["id"] = canonical_id
+            node["type"] = "Vehicle"
+            if not raw_label or raw_label.lower() == raw_id.lower() or raw_label.startswith("vehicle_"):
+                node["label"] = f"Vehicle {clean_plate}"
+            return node
+        else:
+            clean_id = re.sub(r'[^a-zA-Z0-9_]', '', raw_id.lower().replace(' ', '_'))
+            clean_id = clean_id if clean_id.startswith('vehicle_') else f"vehicle_{clean_id}"
+            node["id"] = clean_id
+            node["type"] = "Vehicle"
+            return node
+
+    # 3. PHONE NUMBER NORMALIZATION
     digits = re.sub(r'\D', '', raw_label if re.search(r'\d{10}', raw_label) else raw_id)
-    if raw_type.lower() in ["phone", "phonenumber", "mobile", "contact"] or (len(digits) >= 10 and len(digits) <= 13):
+    if raw_type.lower() in ["phone", "phonenumber", "mobile", "contact", "sim"] or (len(digits) >= 10 and len(digits) <= 13):
         phone_10 = digits[-10:] if len(digits) >= 10 else digits
         canonical_id = f"phone_{phone_10}"
         if len(phone_10) == 10:
@@ -35,34 +71,6 @@ def normalize_entity(node: dict) -> dict:
         node["label"] = formatted_label
         node["type"] = "Phone"
         node["role"] = role if role in ["Suspect", "Victim", "Witness", "Officer", "Mule_Account", "Tool", "Infrastructure"] else "Tool"
-        return node
-
-    # 2. VEHICLE & LICENSE PLATE NORMALIZATION
-    plate_match = re.search(r'([A-Za-z]{2}[-\s]?\d{1,2}[-\s]?[A-Za-z]{1,3}[-\s]?\d{4})', f"{raw_label} {raw_id}")
-    if raw_type.lower() in ["vehicle", "car", "bike", "truck"] or plate_match:
-        if plate_match:
-            clean_plate = re.sub(r'[^A-Za-z0-9]', '', plate_match.group(1)).upper()
-            canonical_id = f"vehicle_{clean_plate.lower()}"
-            node["id"] = canonical_id
-            node["type"] = "Vehicle"
-            if not raw_label or raw_label.lower() == raw_id.lower():
-                node["label"] = f"Vehicle {clean_plate}"
-            return node
-        else:
-            clean_id = re.sub(r'[^a-zA-Z0-9_]', '', raw_id.lower().replace(' ', '_'))
-            clean_id = clean_id if clean_id.startswith('vehicle_') else f"vehicle_{clean_id}"
-            node["id"] = clean_id
-            node["type"] = "Vehicle"
-            return node
-
-    # 3. BANK ACCOUNT / FINANCIAL ARTIFACT NORMALIZATION
-    if raw_type.lower() in ["account", "bank_account", "mule_account", "financial"] or re.search(r'(acc|account|icici|sbi|hdfc|axis|bank_acc|\d{9,18})', raw_id.lower()):
-        clean_acc = re.sub(r'[^a-zA-Z0-9]', '', raw_id.lower().replace('account', '').replace('acc', '').replace('bank', ''))
-        canonical_id = f"account_{clean_acc}" if clean_acc else f"account_{raw_id.lower()}"
-        node["id"] = canonical_id
-        node["type"] = "Account"
-        if role not in ["Mule_Account", "Suspect", "Victim"]:
-            node["role"] = "Mule_Account"
         return node
 
     # 4. PERSON NORMALIZATION
