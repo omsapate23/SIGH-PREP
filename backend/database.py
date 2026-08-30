@@ -52,6 +52,22 @@ def delete_case_by_id(case_id: str) -> bool:
     finally:
         db_session.close()
 
+def append_case_raw_text(case_id: str, new_text: str) -> dict | None:
+    db_session = SessionLocal()
+    try:
+        case = db_session.query(CaseRecord).filter(CaseRecord.id == case_id).first()
+        if case:
+            if case.raw_text:
+                case.raw_text += f"\n\n--- ADDITIONAL EVIDENCE PAYLOAD ---\n{new_text}"
+            else:
+                case.raw_text = new_text
+            db_session.commit()
+            db_session.refresh(case)
+            return case.to_dict()
+        return None
+    finally:
+        db_session.close()
+
 def clear_sqlite_cases():
     db_session = SessionLocal()
     try:
@@ -109,7 +125,10 @@ class Neo4jConnection:
 
     def delete_case_from_graph(self, case_id: str):
         with self.__driver.session() as session:
-            session.execute_write(lambda tx: tx.run("MATCH (c:Case {id: $case_id}) DETACH DELETE c", case_id=case_id))
+            def _delete_tx(tx):
+                tx.run("MATCH (c:Case {id: $case_id}) DETACH DELETE c", case_id=case_id)
+                tx.run("MATCH (n:Entity) WHERE NOT (n)-[:CITED_IN]->(:Case) DETACH DELETE n")
+            session.execute_write(_delete_tx)
 
     def ingest_graph_data(self, nodes: list, edges: list, case_id: str = None):
         with self.__driver.session() as session:

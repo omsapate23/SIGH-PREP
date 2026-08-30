@@ -24,9 +24,12 @@ import {
   Globe,
   FolderGit2,
   PlusCircle,
+  Plus,
   Clock,
   Layers,
   ChevronRight,
+  Paperclip,
+  FolderPlus,
 } from 'lucide-react';
 import axios from 'axios';
 import { clsx, type ClassValue } from 'clsx';
@@ -68,16 +71,22 @@ export default function SnareDashboard() {
   const [selectedEdge, setSelectedEdge] = useState<any | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Case creation modal state
+  // Multi-file batch modal state
   const [caseTitleModalOpen, setCaseTitleModalOpen] = useState(false);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [targetCaseMode, setTargetCaseMode] = useState<'new' | 'existing'>('new');
+  const [selectedExistingCaseId, setSelectedExistingCaseId] = useState<string>('');
   const [customCaseTitle, setCustomCaseTitle] = useState('');
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const caseAttachTargetRef = useRef<string | null>(null);
 
   const [telemetryLogs, setTelemetryLogs] = useState<string[]>([
     '[SYSTEM_BOOT] S.N.A.R.E. Engine active. Dual-Database architecture initialized.',
     '[SQLITE_READY] Case Management repository connected (snare_cases.db).',
     '[NEO4J_READY] Global cross-case knowledge graph link analysis online.',
-    '[IDLE] Awaiting case selection or new payload ingestion...',
+    '[BATCH_SUPPORT] Multi-file batch ingestion & evidence attachment active.',
+    '[IDLE] Awaiting case selection or evidence payload...',
   ]);
   const logContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -92,7 +101,7 @@ export default function SnareDashboard() {
     }
   }, [telemetryLogs]);
 
-  // Load cases on mount
+  // Load cases on initial mount
   useEffect(() => {
     loadCases();
   }, []);
@@ -187,14 +196,18 @@ export default function SnareDashboard() {
   };
 
   const handleDeleteCase = async (caseId: string, caseTitle: string) => {
-    if (!confirm(`CONFIRM CASE ARCHIVAL / REMOVAL:\nDelete "${caseTitle}" from SQLite & unlink from Neo4j?`)) {
+    if (
+      !confirm(
+        `CONFIRM CASE ARCHIVAL / REMOVAL:\nDelete "${caseTitle}" from SQLite & purge un-cited entities from Neo4j?`
+      )
+    ) {
       return;
     }
     try {
       addLog(`[CASE_PURGE] Archiving case ${caseTitle}...`);
       await axios.delete(`http://localhost:8000/api/cases/${caseId}`);
       addLog(`[CASE_PURGED] Case ${caseTitle} removed.`);
-      
+
       const remainingCases = cases.filter((c) => c.id !== caseId);
       setCases(remainingCases);
 
@@ -214,24 +227,57 @@ export default function SnareDashboard() {
     }
   };
 
-  const processUploadFile = async (file: File, title: string) => {
+  const openIngestModalForFiles = (files: File[], defaultCaseId?: string) => {
+    if (!files || files.length === 0) return;
+    setPendingFiles(files);
+
+    const firstFile = files[0];
+    const sanitizedDefaultTitle = firstFile.name
+      .replace(/\.[^/.]+$/, '')
+      .replace(/[_-]/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+    setCustomCaseTitle(sanitizedDefaultTitle);
+
+    if (defaultCaseId) {
+      setTargetCaseMode('existing');
+      setSelectedExistingCaseId(defaultCaseId);
+    } else if (activeCaseId && cases.length > 0) {
+      setSelectedExistingCaseId(activeCaseId);
+      setTargetCaseMode('new');
+    } else {
+      setTargetCaseMode('new');
+      if (cases.length > 0) {
+        setSelectedExistingCaseId(cases[0].id);
+      }
+    }
+
+    setCaseTitleModalOpen(true);
+  };
+
+  const processBatchUpload = async (
+    files: File[],
+    mode: 'new' | 'existing',
+    title: string,
+    existingCaseId?: string
+  ) => {
     setIsProcessing(true);
     setSelectedNode(null);
     setSelectedEdge(null);
 
     const formData = new FormData();
-    formData.append('file', file);
-    formData.append('title', title);
+    files.forEach((file) => {
+      formData.append('files', file);
+    });
 
-    const ext = file.name.split('.').pop()?.toLowerCase();
-    addLog(`[CASE_INIT] Initializing Case Dossier: "${title}" (${(file.size / 1024).toFixed(1)} KB)`);
-
-    if (ext === 'csv') {
-      addLog('[CDR_PARSER] Fast-path: Processing Call Detail Record via Pandas engine...');
-    } else if (ext === 'wav' || ext === 'mp3') {
-      addLog('[FASTER_WHISPER] Transcribing offline audio via GPU Faster-Whisper...');
+    if (mode === 'existing' && existingCaseId) {
+      formData.append('case_id', existingCaseId);
+      const targetCase = cases.find((c) => c.id === existingCaseId);
+      addLog(
+        `[BATCH_ATTACH] Attaching ${files.length} evidence file(s) to existing case: "${targetCase?.title || existingCaseId}"`
+      );
     } else {
-      addLog('[QWEN_GPU] Dispatched text segment to local Qwen 2.5 7B model...');
+      formData.append('title', title);
+      addLog(`[BATCH_INIT] Initializing new Case Dossier: "${title}" with ${files.length} file(s)...`);
     }
 
     try {
@@ -240,55 +286,79 @@ export default function SnareDashboard() {
       });
 
       const responseData = res.data;
-      const createdCase = responseData.case;
+      const targetCase = responseData.case;
       const graphResult = responseData.graph;
 
-      addLog(`[PERSIST_SQLITE] Created CaseRecord in SQLite database (ID: ${createdCase?.id?.slice(0, 8)}...).`);
+      addLog(
+        `[PERSIST_SQLITE] CaseRecord updated in SQLite (ID: ${targetCase?.id?.slice(0, 8)}...).`
+      );
       addLog(`[NEO4J_LINK] Merged entities & indexed (Entity)-[:CITED_IN]->(Case).`);
 
       const nodeCount = graphResult?.nodes?.length || 0;
       const edgeCount = graphResult?.edges?.length || 0;
-      addLog(`[RESOLUTION_COMPLETE] Extracted ${nodeCount} entities and ${edgeCount} relationships for this case.`);
+      addLog(
+        `[RESOLUTION_COMPLETE] Extracted ${nodeCount} entities and ${edgeCount} relationships across ${responseData.files_processed || files.length} file(s).`
+      );
 
-      // Update case list & switch view to new case
-      await loadCases(createdCase?.id);
+      // Refresh case list & load target case graph
+      await loadCases(targetCase?.id);
     } catch (err: any) {
-      console.error('Ingestion failed:', err);
+      console.error('Batch ingestion failed:', err);
       addLog(`[ERROR] Ingestion sequence failed: ${err.response?.data?.detail || err.message}`);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (acceptedFiles && acceptedFiles.length > 0) {
-      const file = acceptedFiles[0];
-      setPendingFile(file);
-      const sanitizedDefaultTitle = file.name
-        .replace(/\.[^/.]+$/, '')
-        .replace(/[_-]/g, ' ')
-        .replace(/\b\w/g, (c) => c.toUpperCase());
-      setCustomCaseTitle(sanitizedDefaultTitle);
-      setCaseTitleModalOpen(true);
-    }
-  }, []);
+  const onDrop = useCallback(
+    (acceptedFiles: File[]) => {
+      if (acceptedFiles && acceptedFiles.length > 0) {
+        openIngestModalForFiles(acceptedFiles);
+      }
+    },
+    [cases, activeCaseId]
+  );
 
   const handleConfirmCaseCreation = () => {
-    if (!pendingFile) return;
-    const titleToUse = customCaseTitle.trim() || pendingFile.name;
+    if (!pendingFiles || pendingFiles.length === 0) return;
+    const titleToUse = customCaseTitle.trim() || pendingFiles[0].name;
+    const mode = targetCaseMode;
+    const caseId = selectedExistingCaseId;
+
     setCaseTitleModalOpen(false);
-    processUploadFile(pendingFile, titleToUse);
-    setPendingFile(null);
+    processBatchUpload(pendingFiles, mode, titleToUse, caseId);
+    setPendingFiles([]);
+  };
+
+  const handleTriggerCaseAttachment = (caseId: string) => {
+    caseAttachTargetRef.current = caseId;
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const fileList = Array.from(files);
+      const targetCaseId = caseAttachTargetRef.current || activeCaseId || undefined;
+      openIngestModalForFiles(fileList, targetCaseId);
+    }
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    multiple: false,
+    multiple: true,
     disabled: isProcessing,
   });
 
   const handlePurgeGraph = async () => {
-    if (!confirm('CONFIRM MASTER PURGE:\nWipe all criminal network graphs from Neo4j AND clear all SQLite Case Records?')) {
+    if (
+      !confirm(
+        'CONFIRM MASTER PURGE:\nWipe all criminal network graphs from Neo4j AND clear all SQLite Case Records?'
+      )
+    ) {
       return;
     }
     try {
@@ -416,6 +486,15 @@ export default function SnareDashboard() {
 
   return (
     <div className="flex flex-col h-screen bg-[#000000] text-slate-200 font-mono overflow-hidden select-none">
+      {/* Hidden File Input for Button-Triggered Evidence Attachment */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileInputChange}
+        multiple
+        className="hidden"
+      />
+
       {/* 1. TOP BAR (48px) */}
       <header className="h-12 border-b border-[#1E293B] bg-[#000000] px-4 flex items-center justify-between z-20 shrink-0">
         {/* Left: Branding & Status */}
@@ -465,7 +544,7 @@ export default function SnareDashboard() {
         </div>
 
         {/* Center-Right: Omnibar Search */}
-        <div className="relative w-72">
+        <div className="relative w-64">
           <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-[#94A3B8]" />
           <input
             type="text"
@@ -485,19 +564,32 @@ export default function SnareDashboard() {
         </div>
 
         {/* Right: Graph Actions */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-[10px] text-[#94A3B8] mr-2">
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 text-[10px] text-[#94A3B8] mr-1">
             <Activity className="w-3.5 h-3.5 text-green-500 animate-pulse" />
-            <span>NODES: {graphData.nodes?.length || 0}</span>
-            <span>EDGES: {graphData.edges?.length || 0}</span>
+            <span>N:{graphData.nodes?.length || 0}</span>
+            <span>E:{graphData.edges?.length || 0}</span>
           </div>
+
+          {/* Quick Attach Evidence Button */}
+          {activeCase && (
+            <button
+              onClick={() => handleTriggerCaseAttachment(activeCase.id)}
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-[#111827] border border-[#333333] hover:border-emerald-500 hover:text-emerald-300 text-[10px] text-[#94A3B8] tracking-wider transition-all rounded-[2px]"
+              title="Attach additional evidence file(s) to this active case"
+            >
+              <Paperclip className="w-3 h-3 text-emerald-400" />
+              <span>ATTACH EVIDENCE</span>
+            </button>
+          )}
+
           <button
             onClick={handlePurgeGraph}
-            className="flex items-center gap-1.5 px-2.5 py-1 bg-transparent border border-[#333333] hover:border-[#FFFFFF] hover:bg-[#FFFFFF] hover:text-[#000000] text-[11px] text-[#94A3B8] tracking-wider transition-all rounded-[2px]"
+            className="flex items-center gap-1 px-2 py-1 bg-transparent border border-[#333333] hover:border-[#FFFFFF] hover:bg-[#FFFFFF] hover:text-[#000000] text-[10px] text-[#94A3B8] tracking-wider transition-all rounded-[2px]"
             title="Wipe Neo4j Graph Database & SQLite Cases"
           >
-            <Trash2 className="w-3.5 h-3.5" />
-            MASTER PURGE
+            <Trash2 className="w-3 h-3" />
+            PURGE
           </button>
         </div>
       </header>
@@ -513,11 +605,20 @@ export default function SnareDashboard() {
                 <FolderGit2 className="w-3.5 h-3.5 text-[#FFFFFF]" />
                 CASE DIRECTORY ({cases.length})
               </span>
-              {cases.length > 0 && (
-                <span className="text-[9px] text-[#94A3B8] font-mono">
-                  {viewMode === 'global' ? 'CROSS-CASE VIEW' : 'ISOLATED VIEW'}
-                </span>
-              )}
+              <button
+                onClick={() => {
+                  caseAttachTargetRef.current = null;
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                    fileInputRef.current.click();
+                  }
+                }}
+                className="flex items-center gap-1 text-[9px] text-[#94A3B8] hover:text-[#FFFFFF] uppercase border border-[#1E293B] hover:border-slate-500 px-1.5 py-0.5 rounded-[2px]"
+                title="Create New Case or Add Files"
+              >
+                <Plus className="w-2.5 h-2.5" />
+                <span>NEW</span>
+              </button>
             </div>
 
             <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
@@ -535,7 +636,7 @@ export default function SnareDashboard() {
                           : 'bg-[#0B0F19] border-[#1E293B] text-[#94A3B8] hover:border-slate-500 hover:text-[#FFFFFF]'
                       )}
                     >
-                      <div className="flex flex-col min-w-0 pr-2">
+                      <div className="flex flex-col min-w-0 pr-2 flex-1">
                         <div className="flex items-center gap-1.5">
                           <span
                             className={cn(
@@ -555,16 +656,30 @@ export default function SnareDashboard() {
                           </span>
                         </div>
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteCase(c.id, c.title);
-                        }}
-                        className="text-[#475569] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1"
-                        title="Delete Case Dossier"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+
+                      {/* Action buttons on hover */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleTriggerCaseAttachment(c.id);
+                          }}
+                          className="text-[#475569] hover:text-emerald-400 opacity-60 group-hover:opacity-100 transition-opacity p-1"
+                          title="Attach evidence file(s) to this case"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteCase(c.id, c.title);
+                          }}
+                          className="text-[#475569] hover:text-red-400 opacity-60 group-hover:opacity-100 transition-opacity p-1"
+                          title="Delete Case Dossier"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })
@@ -576,16 +691,16 @@ export default function SnareDashboard() {
             </div>
           </div>
 
-          {/* SECTION 1: DATA INGESTION */}
+          {/* SECTION 1: DATA INGESTION (Dropzone) */}
           <div className="p-3.5 border-b border-[#1E293B]">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] uppercase text-[#FFFFFF] tracking-widest font-bold flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-[#FFFFFF]" />
-                DATA INGESTION
+                DATA INGESTION (BATCH READY)
               </span>
             </div>
 
-            {/* React Dropzone Native Drag & Drop */}
+            {/* React Dropzone Multi-File Drag & Drop */}
             <div
               {...getRootProps()}
               className={cn(
@@ -605,10 +720,10 @@ export default function SnareDashboard() {
               />
               <span className="text-[10px] text-[#94A3B8] group-hover:text-[#FFFFFF] tracking-wider uppercase font-medium text-center px-2">
                 {isDragActive
-                  ? 'DROP FILE TO INITIALIZE CASE'
+                  ? 'DROP FILES TO INGEST NOW'
                   : isProcessing
                   ? 'EXTRACTING INTELLIGENCE...'
-                  : 'DROP FIR / CDR CSV / AUDIO (.WAV)'}
+                  : 'DROP 1+ FILES (FIR / CDR / AUDIO)'}
               </span>
             </div>
 
@@ -638,6 +753,7 @@ export default function SnareDashboard() {
                       log.includes('[NEO4J_') && 'text-[#FFFFFF] font-semibold',
                       log.includes('[PERSIST_') && 'text-purple-400 font-semibold',
                       log.includes('[CASE_') && 'text-cyan-400 font-semibold',
+                      log.includes('[BATCH_') && 'text-cyan-300 font-semibold',
                       log.includes('[CDR_PARSER]') && 'text-cyan-400 font-semibold',
                       log.includes('[FASTER_WHISPER]') && 'text-emerald-400 font-semibold',
                       log.includes('[QWEN_GPU]') && 'text-[#FFFFFF]',
@@ -772,7 +888,7 @@ export default function SnareDashboard() {
                   NO ACTIVE INTELLIGENCE GRAPH
                 </div>
                 <div className="text-[11px] text-[#94A3B8] leading-relaxed mb-4">
-                  Select a case from the directory or drop a police report / FIR to generate entity graph.
+                  Select a case from the directory or drop multiple evidence documents to generate entity graph.
                 </div>
                 <div className="text-[9px] text-[#475569] border border-[#1E293B] px-2 py-1 rounded-[2px]">
                   CYTOSCAPE COLA FORCE-DIRECTED LAYOUT READY
@@ -787,7 +903,7 @@ export default function SnareDashboard() {
               <div className="p-6 border border-[#1E293B] bg-[#000000] rounded-[2px] flex flex-col items-center text-center max-w-sm">
                 <div className="w-8 h-8 border-2 border-t-[#FFFFFF] border-r-transparent border-b-[#FFFFFF] border-l-transparent rounded-full animate-spin mb-3" />
                 <div className="text-xs font-bold text-[#FFFFFF] tracking-widest uppercase mb-1">
-                  EXTRACTING ENTITY KNOWLEDGE GRAPH
+                  PROCESSING EVIDENCE BATCH
                 </div>
                 <div className="text-[10px] text-[#94A3B8] leading-relaxed">
                   Executing NLP entity extraction, case indexing, and Neo4j graph linking...
@@ -947,7 +1063,8 @@ export default function SnareDashboard() {
                           <div className="flex flex-col">
                             <span className="text-[#FFFFFF] font-semibold">{link.targetLabel}</span>
                             <span className="text-[#475569] text-[9px] uppercase">
-                              {link.direction === 'outgoing' ? '→' : '←'} {formatNomenclature(link.relation)} ({link.targetType})
+                              {link.direction === 'outgoing' ? '→' : '←'}{' '}
+                              {formatNomenclature(link.relation)} ({link.targetType})
                             </span>
                           </div>
                           <ExternalLink className="w-3 h-3 text-[#94A3B8]" />
@@ -1040,7 +1157,9 @@ export default function SnareDashboard() {
                       className="bg-[#000000] border border-[#1E293B] hover:border-[#FFFFFF] p-2.5 rounded-[2px] cursor-pointer transition-colors"
                     >
                       <div className="flex justify-between items-center mb-1">
-                        <span className="text-[9px] text-[#475569] uppercase tracking-wider">Source Entity</span>
+                        <span className="text-[9px] text-[#475569] uppercase tracking-wider">
+                          Source Entity
+                        </span>
                         <span className="text-[9px] px-1 py-0.2 bg-[#111827] text-slate-300 rounded-[2px]">
                           {selectedEdge.source_type || 'Unknown'}
                         </span>
@@ -1075,7 +1194,9 @@ export default function SnareDashboard() {
                       className="bg-[#000000] border border-[#1E293B] hover:border-[#FFFFFF] p-2.5 rounded-[2px] cursor-pointer transition-colors"
                     >
                       <div className="flex justify-between items-center mb-1">
-                        <span className="text-[9px] text-[#475569] uppercase tracking-wider">Target Entity</span>
+                        <span className="text-[9px] text-[#475569] uppercase tracking-wider">
+                          Target Entity
+                        </span>
                         <span className="text-[9px] px-1 py-0.2 bg-[#111827] text-slate-300 rounded-[2px]">
                           {selectedEdge.target_type || 'Unknown'}
                         </span>
@@ -1144,21 +1265,22 @@ export default function SnareDashboard() {
         </aside>
       </div>
 
-      {/* 5. CASE TITLE CREATION MODAL */}
+      {/* 5. MULTI-FILE BATCH & CASE ATTACHMENT MODAL */}
       {caseTitleModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-[#000000] border border-[#FFFFFF] p-5 rounded-[2px] shadow-2xl space-y-4">
+          <div className="w-full max-w-lg bg-[#000000] border border-[#FFFFFF] p-5 rounded-[2px] shadow-2xl space-y-4 font-mono">
+            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-[#1E293B] pb-3">
               <div className="flex items-center gap-2">
                 <FolderGit2 className="w-4 h-4 text-[#FFFFFF]" />
                 <h3 className="text-xs font-bold text-[#FFFFFF] tracking-wider uppercase">
-                  INITIALIZE NEW CASE DOSSIER
+                  INGEST EVIDENCE BATCH ({pendingFiles.length} FILE{pendingFiles.length > 1 ? 'S' : ''})
                 </h3>
               </div>
               <button
                 onClick={() => {
                   setCaseTitleModalOpen(false);
-                  setPendingFile(null);
+                  setPendingFiles([]);
                 }}
                 className="text-[#94A3B8] hover:text-[#FFFFFF]"
               >
@@ -1166,16 +1288,57 @@ export default function SnareDashboard() {
               </button>
             </div>
 
-            <div className="space-y-3">
+            {/* Target Mode Selector (Create New vs Attach to Existing) */}
+            <div className="grid grid-cols-2 gap-2 p-1 bg-[#0B0F19] border border-[#1E293B] rounded-[2px]">
+              <button
+                type="button"
+                onClick={() => setTargetCaseMode('new')}
+                className={cn(
+                  'py-1.5 text-[10px] font-bold tracking-wider rounded-[2px] transition-all flex items-center justify-center gap-1.5',
+                  targetCaseMode === 'new'
+                    ? 'bg-[#FFFFFF] text-[#000000]'
+                    : 'text-[#94A3B8] hover:text-[#FFFFFF]'
+                )}
+              >
+                <FolderPlus className="w-3 h-3" />
+                <span>CREATE NEW CASE</span>
+              </button>
+              <button
+                type="button"
+                disabled={cases.length === 0}
+                onClick={() => {
+                  if (cases.length > 0) {
+                    setTargetCaseMode('existing');
+                    if (!selectedExistingCaseId) {
+                      setSelectedExistingCaseId(activeCaseId || cases[0].id);
+                    }
+                  }
+                }}
+                className={cn(
+                  'py-1.5 text-[10px] font-bold tracking-wider rounded-[2px] transition-all flex items-center justify-center gap-1.5',
+                  targetCaseMode === 'existing'
+                    ? 'bg-[#FFFFFF] text-[#000000]'
+                    : cases.length === 0
+                    ? 'opacity-40 cursor-not-allowed text-[#475569]'
+                    : 'text-[#94A3B8] hover:text-[#FFFFFF]'
+                )}
+              >
+                <Paperclip className="w-3 h-3" />
+                <span>ATTACH TO EXISTING</span>
+              </button>
+            </div>
+
+            {/* Mode-Specific Input Fields */}
+            {targetCaseMode === 'new' ? (
               <div>
                 <label className="text-[10px] uppercase text-[#94A3B8] tracking-widest block mb-1 font-semibold">
-                  Case Title / FIR Reference
+                  Case Title / Reference ID
                 </label>
                 <input
                   type="text"
                   value={customCaseTitle}
                   onChange={(e) => setCustomCaseTitle(e.target.value)}
-                  placeholder="e.g. Cyber Syndicate FIR 142/24 - Noida Sector 62"
+                  placeholder="e.g. Cyber Syndicate FIR 142/24 - Sector 62"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -1185,36 +1348,87 @@ export default function SnareDashboard() {
                   className="w-full bg-[#0B0F19] border border-[#1E293B] focus:border-[#FFFFFF] rounded-[2px] p-2 text-xs text-[#FFFFFF] font-mono focus:outline-none"
                 />
               </div>
+            ) : (
+              <div>
+                <label className="text-[10px] uppercase text-[#94A3B8] tracking-widest block mb-1 font-semibold">
+                  Select Target Case Dossier
+                </label>
+                <select
+                  value={selectedExistingCaseId || (activeCaseId || cases[0]?.id || '')}
+                  onChange={(e) => setSelectedExistingCaseId(e.target.value)}
+                  className="w-full bg-[#0B0F19] border border-[#1E293B] focus:border-[#FFFFFF] rounded-[2px] p-2 text-xs text-[#FFFFFF] font-mono focus:outline-none"
+                >
+                  {cases.map((c) => (
+                    <option key={c.id} value={c.id} className="bg-[#0B0F19] text-[#FFFFFF]">
+                      {c.title} ({c.created_at ? new Date(c.created_at).toLocaleDateString() : 'N/A'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
-              {pendingFile && (
-                <div className="bg-[#0B0F19] border border-[#1E293B] p-2.5 rounded-[2px] text-[10px] space-y-1">
-                  <div className="flex justify-between text-[#94A3B8]">
-                    <span>Source Payload:</span>
-                    <span className="text-[#FFFFFF] font-semibold">{pendingFile.name}</span>
+            {/* List of Queued Files */}
+            <div>
+              <div className="text-[10px] uppercase text-[#94A3B8] tracking-widest block mb-1 font-semibold flex justify-between">
+                <span>Queued Payloads ({pendingFiles.length})</span>
+                <span className="text-[#64748B]">
+                  Total:{' '}
+                  {(
+                    pendingFiles.reduce((acc, f) => acc + f.size, 0) / 1024
+                  ).toFixed(1)}{' '}
+                  KB
+                </span>
+              </div>
+              <div className="bg-[#0B0F19] border border-[#1E293B] p-2 rounded-[2px] max-h-36 overflow-y-auto space-y-1.5">
+                {pendingFiles.map((file, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between text-[10px] bg-[#000000] border border-[#1E293B] px-2 py-1 rounded-[2px]"
+                  >
+                    <div className="flex items-center gap-2 truncate pr-2">
+                      <FileText className="w-3 h-3 text-[#94A3B8] shrink-0" />
+                      <span className="text-[#FFFFFF] truncate">{file.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[#64748B] text-[9px]">
+                        {(file.size / 1024).toFixed(1)} KB
+                      </span>
+                      {pendingFiles.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPendingFiles((prev) => prev.filter((_, i) => i !== idx));
+                          }}
+                          className="text-[#475569] hover:text-red-400"
+                          title="Remove file"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex justify-between text-[#94A3B8]">
-                    <span>File Size:</span>
-                    <span className="text-[#FFFFFF]">{(pendingFile.size / 1024).toFixed(1)} KB</span>
-                  </div>
-                </div>
-              )}
+                ))}
+              </div>
             </div>
 
+            {/* Modal Footer */}
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#1E293B]">
               <button
+                type="button"
                 onClick={() => {
                   setCaseTitleModalOpen(false);
-                  setPendingFile(null);
+                  setPendingFiles([]);
                 }}
                 className="px-3 py-1.5 border border-[#333333] hover:border-[#FFFFFF] text-[#94A3B8] hover:text-[#FFFFFF] text-[11px] rounded-[2px] transition-colors"
               >
                 CANCEL
               </button>
               <button
+                type="button"
                 onClick={handleConfirmCaseCreation}
                 className="px-4 py-1.5 bg-[#FFFFFF] text-[#000000] font-bold text-[11px] hover:bg-slate-200 rounded-[2px] transition-colors"
               >
-                INITIALIZE &amp; EXTRACT
+                {targetCaseMode === 'new' ? 'INITIALIZE & EXTRACT' : 'ATTACH & MERGE'}
               </button>
             </div>
           </div>

@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import CytoscapeComponent from 'react-cytoscapejs';
 import cytoscape from 'cytoscape';
 import cola from 'cytoscape-cola';
-import { Maximize2, RefreshCw } from 'lucide-react';
+import { Maximize2, RefreshCw, LayoutGrid, Network, GitGraph } from 'lucide-react';
 
 if (typeof window !== 'undefined') {
   try {
@@ -35,7 +35,7 @@ const SVG_ICONS = {
   Location:
     'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMjAgMTBjMCA0Ljk5My01LjUzOSAxMC4xOTMtNy4zOTkgMTEuNzk5YTEgMSAwIDAgMS0xLjIwMiAwQzkuNTM5IDIwLjE5MyA0IDE0Ljk5MyA0IDEwYTggOCAwIDAgMSAxNiAwIi8+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMCIgcj0iMyIvPjwvc3ZnPg==',
   Organization:
-    'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB3aWR0aD0iMTYiIGhlaWdodD0iMjAiIHg9IjQiIHk9IjIiIHJ4PSIyIiByeT0iMiIvPjxwYXRoIGQ9Ik05IDIydi00aDZ2NCIvPjxwYXRoIGQ9Ik04IDZoLjAxIi8+PHBhdGggZD0iTTE2IDZoLjAxIi8+PHBhdGggZD0iTTggMTBoLjAxIi8+PHBhdGggZD0iTTE2IDEwaC4wMSIvPjxwYXRoIGQ9Ik04IDE0aC4wMSIvPjxwYXRoIGQ9Ik0xNiAxNGguMDEiLz48L3N2Zz4=',
+    'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB3aWR0aD0iMTYiIGhlaWdodD0iMjAiIHg9IjQiIHk9IjIiIHJ4PSIyIiByeT0iMiIvPjxwYXRoIGQ9Ik05IDIydi00aDZ2NCIvPjxwYXRoIGQ9Ik04IDZoLjAxIi8+PHBhdGggZD0iTTE2IDZoLjAxIi8+PHBhdGggZD0iTTEyIDZoLjAxIi8+PHBhdGggZD0iTTEyIDEwaC4wMSIvPjxwYXRoIGQ9Ik0xMiAxNGguMDEiLz48cGF0aCBkPSJNMTYgMTBoLjAxIi8+PHBhdGggZD0iTTggMTBoLjAxIi8+PC9zdmc+',
   Digital_Artifact:
     'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB3aWR0aD0iMTYiIGhlaWdodD0iMjAiIHg9IjQiIHk9IjIiIHJ4PSIyIiByeT0iMiIvPjxwYXRoIGQ9Ik05IDIydi00aDZ2NCIvPjxwYXRoIGQ9Ik04IDZoLjAxIi8+PHBhdGggZD0iTTE2IDZoLjAxIi8+PHBhdGggZD0iTTEyIDZoLjAxIi8+PHBhdGggZD0iTTEyIDEwaC4wMSIvPjxwYXRoIGQ9Ik0xMiAxNGguMDEiLz48cGF0aCBkPSJNMTYgMTBoLjAxIi8+PHBhdGggZD0iTTggMTBoLjAxIi8+PC9zdmc+',
   Crime_Event:
@@ -55,6 +55,7 @@ export default function NetworkGraph({
   onSelectEdge,
 }: NetworkGraphProps) {
   const cyRef = useRef<cytoscape.Core | null>(null);
+  const [currentLayout, setCurrentLayout] = useState<'cola' | 'cose' | 'concentric'>('cola');
 
   // Compute flat elements and calculate degree weight & sanitized risk for each node
   const flatElements = useMemo(() => {
@@ -111,18 +112,70 @@ export default function NetworkGraph({
     return [...weightedNodes, ...edges];
   }, [elements]);
 
-  const layout = useMemo(
-    () => ({
-      name: 'cola',
+  const executeLayout = useCallback((layoutType: 'cola' | 'cose' | 'concentric' = 'cola') => {
+    const cy = cyRef.current;
+    if (!cy || cy.nodes().length === 0) return;
+
+    let layoutConfig: any = {
+      name: layoutType,
       animate: true,
-      refresh: 1, // Continuous jiggle physics
-      maxSimulationTime: 4000,
-      nodeSpacing: 50,
-      randomize: false,
-      centerGraph: true,
-    }),
-    []
-  );
+      fit: true,
+      padding: 60,
+    };
+
+    if (layoutType === 'cola') {
+      layoutConfig = {
+        ...layoutConfig,
+        name: 'cola',
+        randomize: true,
+        maxSimulationTime: 3000,
+        nodeSpacing: (node: any) => 60,
+        edgeLength: (edge: any) => 140,
+        avoidOverlap: true,
+        handleDisconnected: true,
+        convergenceThreshold: 0.01,
+      };
+    } else if (layoutType === 'cose') {
+      layoutConfig = {
+        ...layoutConfig,
+        name: 'cose',
+        randomize: true,
+        componentSpacing: 120,
+        nodeRepulsion: (node: any) => 800000,
+        idealEdgeLength: (edge: any) => 150,
+        edgeElasticity: (edge: any) => 100,
+        nestingFactor: 5,
+        gravity: 60,
+        numIter: 1000,
+      };
+    } else if (layoutType === 'concentric') {
+      layoutConfig = {
+        ...layoutConfig,
+        name: 'concentric',
+        concentric: (node: any) => node.data('weight') || 1,
+        levelWidth: () => 2,
+        minNodeSpacing: 80,
+      };
+    }
+
+    try {
+      const l = cy.layout(layoutConfig);
+      l.run();
+    } catch (err) {
+      console.warn('Layout execution fallback to cose:', err);
+      cy.layout({ name: 'cose', animate: true, fit: true, padding: 50 }).run();
+    }
+  }, []);
+
+  // Re-run layout whenever flatElements changes to prevent collapsed nodes
+  useEffect(() => {
+    if (cyRef.current && flatElements.length > 0) {
+      const timer = setTimeout(() => {
+        executeLayout(currentLayout);
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [flatElements, executeLayout, currentLayout]);
 
   const styleSheet: any[] = useMemo(
     () => [
@@ -133,19 +186,24 @@ export default function NetworkGraph({
           label: 'data(label)',
           color: '#ffffff',
           'font-family': 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-          'font-size': '11px',
-          'font-weight': 500,
+          'font-size': '10px',
+          'font-weight': 600,
           'text-valign': 'bottom',
-          'text-margin-y': 5,
+          'text-margin-y': 7,
           'text-halign': 'center',
-          width: 'mapData(weight, 1, 15, 32, 84)',
-          height: 'mapData(weight, 1, 15, 32, 84)',
+          'text-background-color': '#000000',
+          'text-background-opacity': 0.85,
+          'text-background-padding': '3px',
+          'text-background-shape': 'roundrectangle',
+          'text-border-color': '#1e293b',
+          'text-border-width': 1,
+          'text-border-opacity': 0.8,
+          width: 'mapData(weight, 1, 15, 36, 88)',
+          height: 'mapData(weight, 1, 15, 36, 88)',
           // Monochromatic Purple shades according to threat/risk severity (0 to 100)
           'background-color': 'mapData(risk, 0, 100, #d8b4fe, #3b0764)',
-          'border-width': 1.5,
+          'border-width': 2,
           'border-color': '#475569',
-          'text-outline-color': '#000000',
-          'text-outline-width': 2,
           'background-image-opacity': 0.95,
           'background-width': '52%',
           'background-height': '52%',
@@ -160,49 +218,49 @@ export default function NetworkGraph({
         selector: 'node[role = "Suspect"]',
         style: {
           'border-color': '#ef4444',
-          'border-width': 2.5,
+          'border-width': 3,
         },
       },
       {
         selector: 'node[role = "Victim"]',
         style: {
           'border-color': '#3b82f6',
-          'border-width': 2.5,
+          'border-width': 3,
         },
       },
       {
         selector: 'node[role = "Officer"]',
         style: {
           'border-color': '#10b981',
-          'border-width': 2.5,
+          'border-width': 3,
         },
       },
       {
         selector: 'node[role = "Witness"]',
         style: {
           'border-color': '#f59e0b',
-          'border-width': 2.5,
+          'border-width': 3,
         },
       },
       {
         selector: 'node[role = "Mule_Account"]',
         style: {
           'border-color': '#ec4899',
-          'border-width': 2.5,
+          'border-width': 3,
         },
       },
       {
         selector: 'node[role = "Tool"], node[role = "Digital_Artifact"]',
         style: {
           'border-color': '#8b5cf6',
-          'border-width': 2.5,
+          'border-width': 3,
         },
       },
       {
         selector: 'node[role = "Infrastructure"]',
         style: {
           'border-color': '#64748b',
-          'border-width': 2,
+          'border-width': 2.5,
         },
       },
       // Base64 SVGs for Entity Types
@@ -254,14 +312,13 @@ export default function NetworkGraph({
           'background-image': SVG_ICONS.Crime_Event,
         },
       },
-      // States: Focused / Unfocused / Highlighted
+      // State Styles
       {
-        selector: 'node.focused',
+        selector: 'node:selected',
         style: {
-          opacity: 1,
-          'border-width': 3,
           'border-color': '#ffffff',
-          'z-index': 999,
+          'border-width': 4,
+          'border-opacity': 1,
         },
       },
       {
@@ -274,11 +331,9 @@ export default function NetworkGraph({
         selector: 'node.highlighted',
         style: {
           'border-color': '#ffffff',
-          'border-width': 3.5,
+          'border-width': 4,
           'background-color': '#ffffff',
-          color: '#000000',
-          'text-outline-color': '#ffffff',
-          'text-outline-width': 0,
+          color: '#ffffff',
           'z-index': 1000,
         },
       },
@@ -290,7 +345,7 @@ export default function NetworkGraph({
           'line-color': '#475569',
           'target-arrow-shape': 'triangle',
           'target-arrow-color': '#475569',
-          'arrow-scale': 0.7,
+          'arrow-scale': 0.8,
           'curve-style': 'bezier',
           'line-style': 'dashed',
           'line-dash-pattern': [4, 10],
@@ -299,13 +354,13 @@ export default function NetworkGraph({
           'font-family': 'Inter, system-ui, -apple-system, sans-serif',
           'font-size': '9px',
           'font-weight': 600,
-          color: '#94a3b8',
+          color: '#cbd5e1',
           'text-rotation': 'autorotate',
           'text-background-color': '#0b0f19',
-          'text-background-opacity': 0.85,
+          'text-background-opacity': 0.9,
           'text-background-padding': '3px',
           'text-background-shape': 'roundrectangle',
-          'text-border-opacity': 0.6,
+          'text-border-opacity': 0.8,
           'text-border-color': '#1e293b',
           'text-border-width': 1,
           'transition-property': 'opacity, line-color, width',
@@ -443,7 +498,7 @@ export default function NetworkGraph({
         {
           fit: {
             eles: cyRef.current.elements(),
-            padding: 40,
+            padding: 50,
           },
         },
         { duration: 300 }
@@ -451,10 +506,9 @@ export default function NetworkGraph({
     }
   };
 
-  const handleRelayout = () => {
-    if (cyRef.current) {
-      cyRef.current.layout(layout).run();
-    }
+  const handleSelectLayout = (layoutType: 'cola' | 'cose' | 'concentric') => {
+    setCurrentLayout(layoutType);
+    executeLayout(layoutType);
   };
 
   return (
@@ -469,23 +523,49 @@ export default function NetworkGraph({
       />
 
       {/* Floating Canvas Quick Toolbar */}
-      <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 bg-[#0B0F19]/90 border border-[#1E293B] p-1 rounded-sm backdrop-blur-sm">
+      <div className="absolute top-4 left-4 z-10 flex items-center gap-1 bg-[#0B0F19]/90 border border-[#1E293B] p-1 rounded-[2px] backdrop-blur-sm shadow-xl font-mono">
         <button
           onClick={handleFit}
           title="Reset Zoom & Fit View"
-          className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono text-slate-300 hover:text-white hover:bg-slate-800 transition-colors rounded-none"
+          className="flex items-center gap-1 px-2.5 py-1 text-[10px] text-slate-300 hover:text-white hover:bg-slate-800 transition-colors rounded-[2px]"
         >
-          <Maximize2 className="w-3.5 h-3.5" />
-          FIT
+          <Maximize2 className="w-3 h-3" />
+          <span>FIT</span>
         </button>
-        <div className="w-[1px] h-3.5 bg-slate-800" />
+
+        <div className="w-[1px] h-3.5 bg-slate-800 mx-0.5" />
+
         <button
-          onClick={handleRelayout}
-          title="Re-run Cola Force Simulation"
-          className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono text-slate-300 hover:text-white hover:bg-slate-800 transition-colors rounded-none"
+          onClick={() => handleSelectLayout('cola')}
+          title="Physics Force Simulation (Cola)"
+          className={`flex items-center gap-1 px-2.5 py-1 text-[10px] transition-colors rounded-[2px] ${
+            currentLayout === 'cola' ? 'bg-[#FFFFFF] text-[#000000] font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+          }`}
         >
-          <RefreshCw className="w-3.5 h-3.5" />
-          COLA
+          <RefreshCw className="w-3 h-3" />
+          <span>COLA</span>
+        </button>
+
+        <button
+          onClick={() => handleSelectLayout('cose')}
+          title="Compound Spring Embedder (Cose)"
+          className={`flex items-center gap-1 px-2.5 py-1 text-[10px] transition-colors rounded-[2px] ${
+            currentLayout === 'cose' ? 'bg-[#FFFFFF] text-[#000000] font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <Network className="w-3 h-3" />
+          <span>COSE</span>
+        </button>
+
+        <button
+          onClick={() => handleSelectLayout('concentric')}
+          title="Concentric Circles Hierarchy"
+          className={`flex items-center gap-1 px-2.5 py-1 text-[10px] transition-colors rounded-[2px] ${
+            currentLayout === 'concentric' ? 'bg-[#FFFFFF] text-[#000000] font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <GitGraph className="w-3 h-3" />
+          <span>CONCENTRIC</span>
         </button>
       </div>
 
@@ -493,7 +573,6 @@ export default function NetworkGraph({
         elements={flatElements}
         style={{ width: '100%', height: '100%', backgroundColor: 'transparent' }}
         stylesheet={styleSheet}
-        layout={layout}
         cy={(cy) => {
           cyRef.current = cy;
           cy.on('tap', 'node', (evt) => {
