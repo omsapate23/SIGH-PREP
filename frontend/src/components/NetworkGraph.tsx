@@ -10,7 +10,7 @@ if (typeof window !== 'undefined') {
   try {
     cytoscape.use(cola);
   } catch {
-    // ignore if already registered
+    // Ignore if already registered
   }
 }
 
@@ -21,6 +21,22 @@ interface NetworkGraphProps {
   onSelectNode: (nodeData: any) => void;
 }
 
+// Base64 Encoded SVG Icons (White stroke, transparent fill)
+const SVG_ICONS = {
+  Person:
+    'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTkgMjF2LTJhNCA0IDAgMCAwLTQtNEg5YTQgNCAwIDAgMC00IDR2MiIvPjxjaXJjbGUgY3g9IjEyIiBjeT0iNyIgcj0iNCIvPjwvc3ZnPg==',
+  Phone:
+    'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB3aWR0aD0iMTQiIGhlaWdodD0iMjAiIHg9IjUiIHk9IjIiIHJ4PSIyIiByeT0iMiIvPjxwYXRoIGQ9Ik0xMiAxOGguMDEiLz48L3N2Zz4=',
+  Vehicle:
+    'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTkgMTdoMmMuNiAwIDEtLjQgMS0xdi0zYzAtLjktLjctMS43LTEuNS0xLjlDMTguNyAxMC42IDE2IDEwIDE2IDEwcy0xLjMtMS40LTIuMi0yLjNjLS41LS40LTEuMS0uNy0xLjgtLjdINWMtLjYgMC0xLjEuNC0xLjQuOWwtMS40IDIuOUEzLjcgMy43IDAgMCAwIDIgMTJ2NGMwIC42LjQgMSAxIDFoMiIvPjxjaXJjbGUgY3g9IjciIGN5PSIxNyIgcj0iMiIvPjxwYXRoIGQ9Ik05IDE3aDYiLz48Y2lyY2xlIGN4PSIxNyIgY3k9IjE3IiByPSIyIi8+PC9zdmc+',
+  Account:
+    'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB3aWR0aD0iMjAiIGhlaWdodD0iMTQiIHg9IjIiIHk9IjUiIHJ4PSIyIiByeT0iMiIvPjxwYXRoIGQ9Ik0xMiAxOGguMDEiLz48L3N2Zz4=',
+  Location:
+    'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMjAgMTBjMCA0Ljk5My01LjUzOSAxMC4xOTMtNy4zOTkgMTEuNzk5YTEgMSAwIDAgMS0xLjIwMiAwQzkuNTM5IDIwLjE5MyA0IDE0Ljk5MyA0IDEwYTggOCAwIDAgMSAxNiAwIi8+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMCIgcj0iMyIvPjwvc3ZnPg==',
+  Organization:
+    'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB3aWR0aD0iMTYiIGhlaWdodD0iMjAiIHg9IjQiIHk9IjIiIHJ4PSIyIiByeT0iMiIvPjxwYXRoIGQ9Ik05IDIydi00aDZ2NCIvPjxwYXRoIGQ9Ik04IDZoLjAxIi8+PHBhdGggZD0iTTE2IDZoLjAxIi8+PHBhdGggZD0iTTggMTBoLjAxIi8+PHBhdGggZD0iTTE2IDEwaC4wMSIvPjxwYXRoIGQ9Ik04IDE0aC4wMSIvPjxwYXRoIGQ9Ik0xNiAxNGguMDEiLz48L3N2Zz4=',
+};
+
 export default function NetworkGraph({
   elements,
   activeFilters,
@@ -29,7 +45,7 @@ export default function NetworkGraph({
 }: NetworkGraphProps) {
   const cyRef = useRef<cytoscape.Core | null>(null);
 
-  // Compute flat elements and calculate node weights based on connected edge degree
+  // Compute flat elements and calculate degree weight & sanitized risk for each node
   const flatElements = useMemo(() => {
     let rawList: any[] = [];
     if (!elements) rawList = [];
@@ -57,11 +73,17 @@ export default function NetworkGraph({
     const weightedNodes = nodes.map((node) => {
       const id = String(node.data.id);
       const weight = Math.max(1, degreeMap[id] || 1);
+      const threatScore = Math.min(
+        100,
+        Math.max(0, Number(node.data?.threat_score !== undefined ? node.data.threat_score : node.data?.risk) || 0)
+      );
       return {
         ...node,
         data: {
           ...node.data,
           weight,
+          risk: threatScore,
+          threat_score: threatScore,
         },
       };
     });
@@ -73,10 +95,9 @@ export default function NetworkGraph({
     () => ({
       name: 'cola',
       animate: true,
-      refresh: 1, // continuous jiggle
+      refresh: 1, // Continuous jiggle physics
       maxSimulationTime: 4000,
       nodeSpacing: 50,
-      edgeLengthVal: 80,
       randomize: false,
       centerGraph: true,
     }),
@@ -88,65 +109,66 @@ export default function NetworkGraph({
       {
         selector: 'node',
         style: {
-          'background-color': '#64748B',
+          shape: 'ellipse',
           label: 'data(label)',
-          color: '#FFFFFF',
+          color: '#ffffff',
           'font-family': 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-          'font-size': '12px',
+          'font-size': '11px',
           'font-weight': 500,
           'text-valign': 'bottom',
-          'text-margin-y': 6,
+          'text-margin-y': 5,
           'text-halign': 'center',
-          width: 'mapData(weight, 1, 10, 40, 100)',
-          height: 'mapData(weight, 1, 10, 40, 100)',
+          width: 'mapData(weight, 1, 15, 30, 80)',
+          height: 'mapData(weight, 1, 15, 30, 80)',
+          // Monochromatic Purple shades according to threat/risk severity (0 to 100)
+          'background-color': 'mapData(risk, 0, 100, #d8b4fe, #3b0764)',
           'border-width': 0,
           'text-outline-color': '#000000',
           'text-outline-width': 2,
+          'background-image-opacity': 0.95,
+          'background-width': '55%',
+          'background-height': '55%',
+          'background-fit': 'none',
+          'background-clip': 'node',
           'transition-property': 'opacity, border-width, border-color, background-color, width, height',
           'transition-duration': 250,
         },
       },
-      // Color-coded entity types
+      // Base64 SVGs for Entity Types
       {
         selector: 'node[type = "Person"]',
         style: {
-          'background-color': '#F97316', // Orange
-          shape: 'ellipse',
+          'background-image': SVG_ICONS.Person,
         },
       },
       {
         selector: 'node[type = "Phone"]',
         style: {
-          'background-color': '#EF4444', // Red
-          shape: 'rectangle',
+          'background-image': SVG_ICONS.Phone,
         },
       },
       {
         selector: 'node[type = "Vehicle"]',
         style: {
-          'background-color': '#8B5CF6', // Purple
-          shape: 'triangle',
+          'background-image': SVG_ICONS.Vehicle,
         },
       },
       {
         selector: 'node[type = "Account"]',
         style: {
-          'background-color': '#3B82F6', // Blue
-          shape: 'diamond',
+          'background-image': SVG_ICONS.Account,
         },
       },
       {
         selector: 'node[type = "Location"]',
         style: {
-          'background-color': '#10B981', // Green
-          shape: 'pentagon',
+          'background-image': SVG_ICONS.Location,
         },
       },
       {
         selector: 'node[type = "Organization"]',
         style: {
-          'background-color': '#EC4899', // Pink
-          shape: 'hexagon',
+          'background-image': SVG_ICONS.Organization,
         },
       },
       // States: Focused / Unfocused / Highlighted
@@ -154,8 +176,8 @@ export default function NetworkGraph({
         selector: 'node.focused',
         style: {
           opacity: 1,
-          'border-width': 3.5,
-          'border-color': '#FFFFFF',
+          'border-width': 2.5,
+          'border-color': '#ffffff',
           'z-index': 999,
         },
       },
@@ -168,34 +190,43 @@ export default function NetworkGraph({
       {
         selector: 'node.highlighted',
         style: {
-          'background-color': '#FFFFFF',
+          'border-color': '#ffffff',
+          'border-width': 3,
+          'background-color': '#ffffff',
           color: '#000000',
-          'border-color': '#FFFFFF',
-          'border-width': 3.5,
-          'z-index': 1000,
-          'text-outline-color': '#FFFFFF',
+          'text-outline-color': '#ffffff',
           'text-outline-width': 0,
+          'z-index': 1000,
         },
       },
-      // Edges styling
+      // Animated Flowing Edges
       {
         selector: 'edge',
         style: {
-          width: 1.5,
+          width: 2,
           'line-color': '#475569',
-          'target-arrow-color': '#475569',
-          'target-arrow-shape': 'triangle',
+          'target-arrow-shape': 'none',
           'curve-style': 'bezier',
+          'line-style': 'dashed',
+          'line-dash-pattern': [4, 12],
+          'line-dash-offset': 0,
           label: 'data(label)',
           'font-family': 'Inter, system-ui, sans-serif',
-          'font-size': '9px',
+          'font-size': '8px',
           color: '#94a3b8',
           'text-rotation': 'autorotate',
           'text-background-color': '#000000',
           'text-background-opacity': 0.85,
           'text-background-padding': '2px',
-          'transition-property': 'opacity, line-color, target-arrow-color',
+          'transition-property': 'opacity, line-color',
           'transition-duration': 250,
+        },
+      },
+      {
+        selector: 'edge.highlighted-edge',
+        style: {
+          'line-color': '#c084fc',
+          width: 3,
         },
       },
       {
@@ -208,6 +239,27 @@ export default function NetworkGraph({
     []
   );
 
+  // Animated Flowing Edge Dots Loop
+  useEffect(() => {
+    let animId: number;
+    let offset = 0;
+
+    const animateEdges = () => {
+      offset -= 0.6;
+      if (offset <= -16) offset = 0;
+      if (cyRef.current) {
+        cyRef.current.edges().style('line-dash-offset', offset);
+      }
+      animId = requestAnimationFrame(animateEdges);
+    };
+
+    animId = requestAnimationFrame(animateEdges);
+
+    return () => {
+      cancelAnimationFrame(animId);
+    };
+  }, [flatElements]);
+
   // Depth-of-field multi-select activeFilters effect
   useEffect(() => {
     const cy = cyRef.current;
@@ -217,7 +269,7 @@ export default function NetworkGraph({
       if (!activeFilters || activeFilters.length === 0) {
         cy.nodes().removeClass('focused unfocused');
         cy.edges().removeClass('unfocused');
-        cy.edges().style({ opacity: 0.7 });
+        cy.edges().style({ opacity: 0.8 });
         return;
       }
 
@@ -246,7 +298,7 @@ export default function NetworkGraph({
     });
   }, [activeFilters, flatElements]);
 
-  // Omnibar Search effect with animated Pan/Zoom
+  // Omnibar Search effect with animated Pan/Zoom & Highlighted Edges
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
@@ -254,6 +306,7 @@ export default function NetworkGraph({
     const trimmed = searchQuery.trim().toLowerCase();
     cy.batch(() => {
       cy.nodes().removeClass('highlighted');
+      cy.edges().removeClass('highlighted-edge');
 
       if (!trimmed) return;
 
@@ -271,6 +324,7 @@ export default function NetworkGraph({
       });
 
       matchingNodes.addClass('highlighted');
+      matchingNodes.connectedEdges().addClass('highlighted-edge');
 
       if (matchingNodes.length > 0) {
         cy.animate(
@@ -330,7 +384,7 @@ export default function NetworkGraph({
         <div className="w-[1px] h-3.5 bg-slate-800" />
         <button
           onClick={handleRelayout}
-          title="Re-run Cola Physics Layout"
+          title="Re-run Cola Force Simulation"
           className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono text-slate-300 hover:text-white hover:bg-slate-800 transition-colors rounded-none"
         >
           <RefreshCw className="w-3.5 h-3.5" />

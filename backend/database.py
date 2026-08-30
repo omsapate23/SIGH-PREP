@@ -4,6 +4,26 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def calculate_threat_score(node_type: str, degree_count: int) -> int:
+    # Base scores and multipliers based on entity capability
+    type_multipliers = {
+        "Person": 1.5,
+        "Account": 1.3,
+        "Phone": 1.1,
+        "Vehicle": 0.8,
+        "Location": 0.5,
+        "Organization": 1.2
+    }
+    
+    base_score = 10
+    edge_weight = degree_count * 8  # 8 points per direct connection
+    
+    multiplier = type_multipliers.get(node_type, 1.0)
+    raw_score = (base_score + edge_weight) * multiplier
+    
+    # Cap the score safely at 100
+    return min(int(raw_score), 100)
+
 class Neo4jConnection:
     def __init__(self, uri, user, pwd):
         self.__uri = uri
@@ -36,7 +56,6 @@ class Neo4jConnection:
         MERGE (n:Entity {id: $id})
         SET n.label = $label,
             n.type = $type,
-            n.risk = $risk,
             n.aliases = $aliases,
             n.last_seen = $last_seen,
             n.details = $details,
@@ -47,7 +66,6 @@ class Neo4jConnection:
                id=str(node.get("id")), 
                label=str(node.get("label", node.get("id"))), 
                type=str(node.get("type", "Unknown")), 
-               risk=int(node.get("risk", 0)),
                aliases=str(node.get("aliases", "")),
                last_seen=str(node.get("last_seen", "")),
                details=str(node.get("details", "")),
@@ -73,16 +91,21 @@ class Neo4jConnection:
 
     @staticmethod
     def _fetch_graph(tx):
-        nodes_result = tx.run("MATCH (n:Entity) RETURN n")
+        nodes_result = tx.run("MATCH (n:Entity) OPTIONAL MATCH (n)-[r]-() RETURN n, count(r) as degree")
         nodes = []
         for record in nodes_result:
             node = record["n"]
+            degree = int(record["degree"] or 0)
+            node_type = node.get("type", "Unknown")
+            threat_score = calculate_threat_score(node_type, degree)
             nodes.append({
                 "data": {
                     "id": node.get("id"),
                     "label": node.get("label", node.get("id")),
-                    "type": node.get("type", "Unknown"),
-                    "risk": node.get("risk", 0),
+                    "type": node_type,
+                    "threat_score": threat_score,
+                    "risk": threat_score,
+                    "degree": degree,
                     "aliases": node.get("aliases", ""),
                     "last_seen": node.get("last_seen", ""),
                     "details": node.get("details", ""),

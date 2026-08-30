@@ -31,54 +31,12 @@ function cn(...inputs: ClassValue[]) {
 }
 
 const FILTER_CONFIG = [
-  {
-    type: 'Person',
-    label: 'Persons',
-    icon: User,
-    activeBg: 'bg-[#F97316] text-white border-[#F97316]',
-    activeBadge: 'bg-black/30 text-white',
-    dotColor: 'bg-[#F97316]',
-  },
-  {
-    type: 'Phone',
-    label: 'Phones',
-    icon: Smartphone,
-    activeBg: 'bg-[#EF4444] text-white border-[#EF4444]',
-    activeBadge: 'bg-black/30 text-white',
-    dotColor: 'bg-[#EF4444]',
-  },
-  {
-    type: 'Vehicle',
-    label: 'Vehicles',
-    icon: Car,
-    activeBg: 'bg-[#8B5CF6] text-white border-[#8B5CF6]',
-    activeBadge: 'bg-black/30 text-white',
-    dotColor: 'bg-[#8B5CF6]',
-  },
-  {
-    type: 'Account',
-    label: 'Accounts',
-    icon: CreditCard,
-    activeBg: 'bg-[#3B82F6] text-white border-[#3B82F6]',
-    activeBadge: 'bg-black/30 text-white',
-    dotColor: 'bg-[#3B82F6]',
-  },
-  {
-    type: 'Location',
-    label: 'Locations',
-    icon: MapPin,
-    activeBg: 'bg-[#10B981] text-white border-[#10B981]',
-    activeBadge: 'bg-black/30 text-white',
-    dotColor: 'bg-[#10B981]',
-  },
-  {
-    type: 'Organization',
-    label: 'Organizations',
-    icon: Building2,
-    activeBg: 'bg-[#EC4899] text-white border-[#EC4899]',
-    activeBadge: 'bg-black/30 text-white',
-    dotColor: 'bg-[#EC4899]',
-  },
+  { type: 'Person', label: 'Persons', icon: User },
+  { type: 'Phone', label: 'Phones', icon: Smartphone },
+  { type: 'Vehicle', label: 'Vehicles', icon: Car },
+  { type: 'Account', label: 'Accounts', icon: CreditCard },
+  { type: 'Location', label: 'Locations', icon: MapPin },
+  { type: 'Organization', label: 'Organizations', icon: Building2 },
 ];
 
 export default function SnareDashboard() {
@@ -91,7 +49,7 @@ export default function SnareDashboard() {
   const [selectedNode, setSelectedNode] = useState<any | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [telemetryLogs, setTelemetryLogs] = useState<string[]>([
-    '[SYSTEM_BOOT] S.N.A.R.E. Engine active. Cola physics & multi-modal ingestion ready.',
+    '[SYSTEM_BOOT] S.N.A.R.E. Engine active. Deterministic extraction & Cola Physics ready.',
     '[IDLE] Awaiting case payload (FIR / CDR CSV / Audio Intercept)...',
   ]);
   const logContainerRef = useRef<HTMLDivElement | null>(null);
@@ -143,9 +101,9 @@ export default function SnareDashboard() {
     if (ext === 'csv') {
       addLog('[CDR_PARSER] Fast-path: Processing Call Detail Record via Pandas engine...');
     } else if (ext === 'wav' || ext === 'mp3') {
-      addLog('[FASTER_WHISPER] Transcribing offline audio via Whisper AI...');
+      addLog('[FASTER_WHISPER] Transcribing offline audio via GPU Faster-Whisper...');
     } else {
-      addLog('[OLLAMA_GPU] Dispatched to deterministic Llama 3 extractor...');
+      addLog('[QWEN_GPU] Dispatched text segment to local Qwen 2.5 7B model...');
     }
 
     try {
@@ -172,7 +130,7 @@ export default function SnareDashboard() {
         await fetchGraph();
       }
 
-      addLog('[SYSTEM_READY] Canvas refreshed. Force-directed Cola simulation active.');
+      addLog('[SYSTEM_READY] Canvas refreshed. Purple severity gradient active.');
     } catch (err: any) {
       console.error('Ingestion failed:', err);
       addLog(`[ERROR] Extraction sequence failed: ${err.response?.data?.detail || err.message}`);
@@ -365,7 +323,7 @@ export default function SnareDashboard() {
               className={cn(
                 'flex flex-col items-center justify-center h-20 border border-dashed transition-all cursor-pointer rounded-[2px] group mb-3',
                 isDragActive
-                  ? 'border-[#FFFFFF] bg-[#1E293B]/60 scale-[0.99]'
+                  ? 'border-[#FFFFFF] bg-[#1E293B] scale-[0.99]'
                   : 'border-[#1E293B] hover:border-slate-500 hover:bg-[#0B0F19] bg-[#000000]',
                 isProcessing && 'opacity-50 cursor-not-allowed'
               )}
@@ -401,7 +359,7 @@ export default function SnareDashboard() {
               </div>
               <div
                 ref={logContainerRef}
-                className="bg-[#0B0F19] border border-[#1E293B] p-2 max-h-36 overflow-y-auto font-mono text-[10px] leading-relaxed text-[#94A3B8] space-y-1 select-text scrollbar-thin scrollbar-thumb-slate-800 rounded-[2px]"
+                className="bg-[#0B0F19] border border-[#1E293B] p-2 max-h-40 overflow-y-auto font-mono text-[10px] leading-relaxed text-[#94A3B8] space-y-1 select-text scrollbar-thin scrollbar-thumb-slate-800 rounded-[2px]"
               >
                 {telemetryLogs.map((log, index) => (
                   <div
@@ -411,8 +369,8 @@ export default function SnareDashboard() {
                       log.includes('[ERROR]') && 'text-red-400 font-semibold',
                       log.includes('[NEO4J_SYNC]') && 'text-[#FFFFFF] font-semibold',
                       log.includes('[CDR_PARSER]') && 'text-cyan-400 font-semibold',
-                      log.includes('[FASTER_WHISPER]') && 'text-purple-400 font-semibold',
-                      log.includes('[OLLAMA_GPU]') && 'text-[#94A3B8]',
+                      log.includes('[FASTER_WHISPER]') && 'text-emerald-400 font-semibold',
+                      log.includes('[QWEN_GPU]') && 'text-[#FFFFFF]',
                       log.includes('[EXTRACTED]') && 'text-emerald-400',
                       log.includes('[AUTO_PURGE]') && 'text-amber-400',
                       log.includes('[PURGE') && 'text-amber-400'
@@ -458,24 +416,18 @@ export default function SnareDashboard() {
                     className={cn(
                       'w-full flex items-center justify-between px-3 py-2 border text-xs tracking-wider uppercase transition-all rounded-[2px]',
                       isActive
-                        ? `${item.activeBg} font-bold shadow-md`
+                        ? 'bg-[#FFFFFF] border-[#FFFFFF] text-[#000000] font-bold shadow-sm'
                         : 'border-[#1E293B] bg-[#0B0F19] text-slate-300 hover:bg-slate-800 hover:border-slate-700'
                     )}
                   >
                     <div className="flex items-center gap-2.5">
-                      <span
-                        className={cn(
-                          'w-2 h-2 rounded-full',
-                          isActive ? 'bg-white' : item.dotColor
-                        )}
-                      />
-                      <Icon className={cn('w-3.5 h-3.5', isActive ? 'text-white' : 'text-slate-400')} />
+                      <Icon className={cn('w-3.5 h-3.5', isActive ? 'text-[#000000]' : 'text-[#94A3B8]')} />
                       <span>{item.label}</span>
                     </div>
                     <span
                       className={cn(
                         'text-[10px] px-1.5 py-0.5 rounded-[2px] font-mono font-semibold',
-                        isActive ? item.activeBadge : 'bg-[#111827] text-slate-400'
+                        isActive ? 'bg-[#000000] text-[#FFFFFF]' : 'bg-[#111827] text-slate-400'
                       )}
                     >
                       {count}
@@ -559,14 +511,19 @@ export default function SnareDashboard() {
                         Threat Assessment
                       </span>
                       <span className="text-xs font-bold text-[#FFFFFF]">
-                        {selectedNode.risk ?? 0}/100
+                        {(selectedNode.threat_score ?? selectedNode.data?.threat_score ?? selectedNode.risk ?? selectedNode.data?.risk) ?? 0}/100
                       </span>
                     </div>
                     <div className="w-full bg-[#111827] h-2 rounded-[1px] overflow-hidden border border-[#333333]">
                       <div
                         className="h-full bg-[#FFFFFF] transition-all duration-500"
-                        style={{ width: `${Math.min(100, Math.max(0, Number(selectedNode.risk) || 0))}%` }}
+                        style={{
+                          width: `${Math.min(100, Math.max(0, Number(selectedNode.threat_score ?? selectedNode.data?.threat_score ?? selectedNode.risk ?? selectedNode.data?.risk) || 0))}%`,
+                        }}
                       />
+                    </div>
+                    <div className="text-[8px] font-mono text-[#64748B] mt-1.5 tracking-wider uppercase">
+                      [CALCULATED VIA STRUCTURAL DEGREE CENTRALITY]
                     </div>
                   </div>
                 </div>
